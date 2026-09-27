@@ -93,8 +93,8 @@ public actor Engine {
         // .aimodel directory moved away (AOT ship-flow test), a raw
         // "asset/../sidecar" path ENOENTs at the missing component even
         // though the sidecar itself exists.
-        let provPath = ((cfg.assetDir as NSString).appendingPathComponent("..") as NSString)
-            .appendingPathComponent("combined_provenance.json")
+        let provPath = (((cfg.assetDir as NSString).appendingPathComponent("..") as NSString)
+            .appendingPathComponent("combined_provenance.json") as NSString)
             .standardizingPath
         guard let data = FileManager.default.contents(atPath: provPath),
               let prov = JSONValue.parse(data) else {
