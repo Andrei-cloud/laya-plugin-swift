@@ -7,7 +7,9 @@ import Foundation
 /// Python `json.dumps` compatibility (key order, ensure_ascii=False,
 /// sort_keys where the Python side sorts) is required for byte-identical
 /// decision-log lines and stable `chars_out` usage counts.
-indirect enum JSONValue: Equatable, Sendable {
+indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
+    init(stringLiteral value: String) { self = .string(value) }
+
     /// Hand-written equality (synthesis is impossible: the object payload is
     /// an array of labeled tuples, which never conform to Equatable).
     /// Double compares with plain ==, matching Python list-comparison
@@ -40,6 +42,24 @@ indirect enum JSONValue: Equatable, Sendable {
 
     static func object(_ pairs: [String: JSONValue], order: [String]) -> JSONValue {
         .object(order.compactMap { k in pairs[k].map { (key: k, value: $0) } })
+    }
+
+    /// Ordered-object factory for literals: `obj("a", .string("x"), "b", .int(1))`
+    /// keeps pairs in argument order (case-vs-func `.object` ambiguity in
+    /// nested literals otherwise defeats type inference). Values are typed
+    /// JSONValue so leading-dot shorthand works; keys pass via a string
+    /// carrier case.
+    static func obj(_ parts: JSONValue...) -> JSONValue {
+        var out: [(key: String, value: JSONValue)] = []
+        out.reserveCapacity(parts.count / 2)
+        var i = 0
+        while i + 1 < parts.count {
+            if case .string(let k) = parts[i] {
+                out.append((key: k, value: parts[i + 1]))
+            }
+            i += 2
+        }
+        return .object(out)
     }
 
     var objectPairs: [(key: String, value: JSONValue)]? {
