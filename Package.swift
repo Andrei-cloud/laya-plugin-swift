@@ -1,4 +1,4 @@
-// swift-tools-version:6.2
+// swift-tools-version:6.3
 // Laya decision plugin — native Swift port of laya-plugin (Python).
 //
 // Layering (mirrors the Python package):
@@ -16,7 +16,7 @@ import PackageDescription
 
 let package = Package(
     name: "laya-plugin-swift",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v27)],
     dependencies: [
         .package(url: "https://github.com/grpc/grpc-swift.git", exact: "1.27.6"),
         .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.38.1"),
