@@ -139,3 +139,24 @@ cases (incl. signed zero); `Engine.round4` verified bit-exact as-is on
 
 CLI `--backend http` round trip incl. process spawn: p50 40 ms (≈8 ms
 engine load + ≈22 ms pass + spawn).
+
+## AOT (hardware-optimization cache) — 2026-09-27
+
+`AIModel.specialize(cache: .default, cachePolicy: .persistent)` — the
+supported programmatic equivalent of `coreai-build` (the CLI binary is
+broken on this OS build: dyld symbol mismatch against CoreAIAsset).
+First specialize compiles the hardware-optimized delegate and persists
+it; every later process reuses the artifact. Auto-invalidated when the
+source asset changes/deletes (sourceAssetChangedOrDeleted).
+
+| unit | pre-AOT load | AOT run1 (compiles) | AOT run2+ | wire goldens |
+|------|-------------:|--------------------:|----------:|:------------:|
+| gpu  | ~8.5 s | 6.63 s | **6.1 s** | 15/15 |
+| ne   | ~11.5 s | 6.85 s | **6.1 s** | 15/15 |
+
+NE note: `--unit=ne` loads and answers 15/15 at GPU-parity latency, but
+the ANE compiler rejects the asset's f16↔f32 boundary cast ops
+(`ANE I/O op can only do F16 MemRef <-> F32 Tensor cast` + one
+ANECCompile failure — identical on the Python daemon, same asset). Full
+ANE residency needs a BC1S-shaped re-export (host-precomputed masks,
+pure-f16 tensors) in ~/Developer/ai/laya — asset-side work, not Swift.
