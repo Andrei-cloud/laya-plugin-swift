@@ -160,9 +160,19 @@ public actor Engine {
         default:    opts = .default
         }
         let url = URL(fileURLWithPath: (cfg.assetDir as NSString).standardizingPath)
+        // AOT via the persistent hardware-optimization cache — the supported
+        // programmatic equivalent of `coreai-build` (whose CLI binary is
+        // broken on this OS build: dyld symbol mismatch). First specialize
+        // compiles the hardware-optimized delegate and stores it in the
+        // process/persistent AIModelCache; every later load reuses the
+        // artifact, so the multi-second recompile disappears from cold
+        // start. .persistent survives storage-pressure purges; the entry is
+        // still invalidated when the source asset changes or is deleted
+        // (sourceAssetChangedOrDeleted), which is exactly our update story.
         let model: AIModel
         do {
-            model = try await AIModel.specialize(contentsOf: url, options: opts)
+            model = try await AIModel.specialize(contentsOf: url, options: opts,
+                                                 cache: .default, cachePolicy: .persistent)
         } catch { throw LoadError.loadFailed("\(error)") }
         guard let fname = model.functionNames.first,
               let f = try model.loadFunction(named: fname) else {

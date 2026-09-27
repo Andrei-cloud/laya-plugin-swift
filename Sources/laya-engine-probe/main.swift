@@ -54,7 +54,6 @@ func engineMain() async {
         do { req = try LayaAPI.validateRequest(payload) }
         catch { die("golden payload rejected: \(error)") }
 
-        var _: [(key: String, value: JSONValue)] = []
         for qp in req.questions {
             let qname = qp.name
             let q = qp.q
