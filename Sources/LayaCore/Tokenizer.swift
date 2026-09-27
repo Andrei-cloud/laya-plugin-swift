@@ -27,7 +27,29 @@ import Foundation
 ///     re-evaluating after each merge; rank = first JSON merges-list index
 ///     of the pair; merged id = vocab[a + b].
 public final class LayaTokenizer: @unchecked Sendable {
-    public let vocab: [String: UInt32]
+    /// Byte-exact string key. Swift's String `==`/`hash` implement Unicode
+    /// CANONICAL equivalence — `";" == "\u{037E}"` is TRUE — which silently
+    /// merges distinct vocab entries (this exact collision flipped the
+    /// supervise chain: `;`→235289 was overwritten by `;`→244780). The
+    /// Python/Rust tokenizer compares code points exactly, so every
+    /// string-keyed table here keys on raw UTF-8 bytes instead.
+    struct TokenKey: Hashable, Sendable {
+        let bytes: [UInt8]
+        init(_ s: String) { bytes = Array(s.utf8) }
+    }
+    /// vocab keyed byte-exactly (multi-char entries: merges, byte fallback).
+    let vocabK: [TokenKey: UInt32]
+    /// Single-scalar entries keyed by scalar value — exact integer compare,
+    /// no hashing of strings on the BPE hot path.
+    let scalarToId: [UInt32: UInt32]
+    /// "<0xNN>" byte-fallback tokens, indexed by byte value (0 = absent).
+    let byteTok: [UInt32]
+    public var vocab: [String: UInt32] {
+        var out: [String: UInt32] = [:]
+        out.reserveCapacity(vocabK.count)
+        for (k, v) in vocabK { out[String(decoding: k.bytes, as: UTF8.self)] = v }
+        return out
+    }
     private let vocabR: [UInt32: String]
     /// packed (aId << 32 | bId) -> (rank, newId)
     private let rank: [UInt64: (rank: UInt32, newId: UInt32)]
@@ -47,7 +69,9 @@ public final class LayaTokenizer: @unchecked Sendable {
     public static let repl: Unicode.Scalar = Unicode.Scalar(0x2581)!
 
     private let cacheLock = NSLock()
-    private var chunkCache: [String: [UInt32]] = [:]
+    /// BPE chunk cache keyed by SCALAR VALUES — exact integer equality,
+    /// immune to the String canonical-equivalence trap (▁; vs ▁;).
+    private var chunkCache: [[UInt32]: [UInt32]] = [:]
 
     // MARK: - Whitespace class
 
@@ -97,29 +121,43 @@ public final class LayaTokenizer: @unchecked Sendable {
               let mlist = list(model["merges"])
         else { throw LoadError.malformed("model.vocab / model.merges missing") }
 
-        var vocab: [String: UInt32] = [:]
-        vocab.reserveCapacity(vpairs.count)
+        var vocabK: [TokenKey: UInt32] = [:]
+        vocabK.reserveCapacity(vpairs.count)
+        var scalarToId: [UInt32: UInt32] = [:]
+        var byteTok = [UInt32](repeating: 0, count: 256)
         for p in vpairs {
-            if let i = p.value.intValue, i >= 0 { vocab[p.key] = UInt32(i) }
+            guard let i = p.value.intValue, i >= 0 else { continue }
+            let u = UInt32(i)
+            vocabK[TokenKey(p.key)] = u
+            // byte-exact single-scalar entries (scalar.value is exact —
+            // NOT String ==, which canonicalizes)
+            var sc = p.key.unicodeScalars.makeIterator()
+            if let first = sc.next(), sc.next() == nil {
+                scalarToId[first.value] = u
+            }
+            if p.key.utf8.count == 5, p.key.hasPrefix("<0x"), p.key.hasSuffix(">"),
+               let b = UInt8(p.key.dropFirst(3).dropLast(), radix: 16) {
+                byteTok[Int(b)] = u
+            }
         }
         var vocabR: [UInt32: String] = [:]
-        vocabR.reserveCapacity(vocab.count)
-        for (k, v) in vocab { vocabR[v] = k }
+        vocabR.reserveCapacity(vocabK.count)
+        for (k, v) in vocabK { vocabR[v] = String(decoding: k.bytes, as: UTF8.self) }
 
         // rank = FIRST index where both sides exist in vocab; newId =
         // vocab[a+b] (every JSON merge concatenation exists in this vocab;
         // fall back to the unk id if one ever does not).
-        let unkProbe = vocab["<unk>"] ?? 0
+        let unkProbe = vocabK[TokenKey("<unk>")] ?? 0
         var rank: [UInt64: (rank: UInt32, newId: UInt32)] = [:]
         rank.reserveCapacity(mlist.count)
         for (i, node) in mlist.enumerated() {
             guard case .array(let pr) = node, pr.count == 2,
                   let a = pr[0].stringValue, let b = pr[1].stringValue,
-                  let aid = vocab[a], let bid = vocab[b]
+                  let aid = vocabK[TokenKey(a)], let bid = vocabK[TokenKey(b)]
             else { continue }
             let key = (UInt64(aid) << 32) | UInt64(bid)
             if rank[key] == nil {
-                rank[key] = (UInt32(i), vocab[a + b] ?? unkProbe)
+                rank[key] = (UInt32(i), vocabK[TokenKey(a + b)] ?? unkProbe)
             }
         }
 
@@ -142,29 +180,32 @@ public final class LayaTokenizer: @unchecked Sendable {
             buckets[UInt32(a.first.value), default: []].append((a.content, a.id, a.lstrip))
         }
 
-        func id(_ tok: String) -> UInt32 { vocab[tok] ?? unkProbe }
+        func id(_ tok: String) -> UInt32 { vocabK[TokenKey(tok)] ?? unkProbe }
         return LayaTokenizer(
-            vocab: vocab, vocabR: vocabR, rank: rank, added: addedList,
+            vocabK: vocabK, scalarToId: scalarToId, byteTok: byteTok,
+            vocabR: vocabR, rank: rank, added: addedList,
             addedBuckets: buckets,
             unkId: id("<unk>"), clsId: id("<bos>"), sepId: id("<eos>"),
             padId: id("<pad>"), maskId: id("<mask>")
         )
     }
 
-    private init(vocab: [String: UInt32], vocabR: [UInt32: String],
+    private init(vocabK: [TokenKey: UInt32], scalarToId: [UInt32: UInt32],
+                 byteTok: [UInt32], vocabR: [UInt32: String],
                  rank: [UInt64: (rank: UInt32, newId: UInt32)],
                  added: [(content: [Unicode.Scalar], first: Unicode.Scalar,
                           id: UInt32, lstrip: Bool)],
                  addedBuckets: [UInt32: [(content: [Unicode.Scalar], id: UInt32, lstrip: Bool)]],
                  unkId: UInt32, clsId: UInt32, sepId: UInt32,
                  padId: UInt32, maskId: UInt32) {
-        self.vocab = vocab; self.vocabR = vocabR; self.rank = rank
+        self.vocabK = vocabK; self.scalarToId = scalarToId; self.byteTok = byteTok
+        self.vocabR = vocabR; self.rank = rank
         self.added = added; self.addedBuckets = addedBuckets
         self.unkId = unkId; self.clsId = clsId; self.sepId = sepId
         self.padId = padId; self.maskId = maskId
     }
 
-    public func token(toId token: String) -> UInt32? { vocab[token] }
+    public func token(toId token: String) -> UInt32? { vocabK[TokenKey(token)] }
     public func id(toToken id: UInt32) -> String? { vocabR[id] }
 
     // MARK: - Stage 1: added-token extraction
@@ -268,16 +309,17 @@ public final class LayaTokenizer: @unchecked Sendable {
     func bpe(_ word: String) -> [UInt32] {
         var syms: [UInt32] = []
         for sc in word.unicodeScalars {
-            let s = String(sc)
-            if let id = vocab[s] {
+            if let id = scalarToId[sc.value] {
                 syms.append(id)
+            } else if sc.value < 256, byteTok[Int(sc.value)] != 0 {
+                syms.append(byteTok[Int(sc.value)])
             } else {
-                let bytes = Array(s.utf8)
+                let bytes = Array(String(sc).utf8)
                 var byteIds: [UInt32] = []
                 var ok = true
                 for b in bytes {
-                    let t = String(format: "<0x%02X>", b)
-                    if let id = vocab[t] { byteIds.append(id) }
+                    let t = byteTok[Int(b)]
+                    if t != 0 { byteIds.append(t) }
                     else { ok = false; break }
                 }
                 if ok {
@@ -304,12 +346,13 @@ public final class LayaTokenizer: @unchecked Sendable {
     }
 
     private func bpeCached(_ chunk: String) -> [UInt32] {
+        let key = chunk.unicodeScalars.map { $0.value }
         cacheLock.lock()
-        if let hit = chunkCache[chunk] { cacheLock.unlock(); return hit }
+        if let hit = chunkCache[key] { cacheLock.unlock(); return hit }
         cacheLock.unlock()
         let ids = bpe(chunk)
         cacheLock.lock()
-        if chunkCache.count < 65536 { chunkCache[chunk] = ids }
+        if chunkCache.count < 65536 { chunkCache[key] = ids }
         cacheLock.unlock()
         return ids
     }

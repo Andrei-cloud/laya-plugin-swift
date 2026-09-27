@@ -7,14 +7,14 @@ import Foundation
 /// Python `json.dumps` compatibility (key order, ensure_ascii=False,
 /// sort_keys where the Python side sorts) is required for byte-identical
 /// decision-log lines and stable `chars_out` usage counts.
-indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
-    init(stringLiteral value: String) { self = .string(value) }
+public indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
+    public init(stringLiteral value: String) { self = .string(value) }
 
     /// Hand-written equality (synthesis is impossible: the object payload is
     /// an array of labeled tuples, which never conform to Equatable).
     /// Double compares with plain ==, matching Python list-comparison
     /// semantics on parsed JSON.
-    static func == (lhs: JSONValue, rhs: JSONValue) -> Bool {
+    public static func == (lhs: JSONValue, rhs: JSONValue) -> Bool {
         switch (lhs, rhs) {
         case (.null, .null): return true
         case let (.bool(a), .bool(b)): return a == b
@@ -40,7 +40,7 @@ indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
 
     // MARK: lookup / construction helpers
 
-    static func object(_ pairs: [String: JSONValue], order: [String]) -> JSONValue {
+    public static func object(_ pairs: [String: JSONValue], order: [String]) -> JSONValue {
         .object(order.compactMap { k in pairs[k].map { (key: k, value: $0) } })
     }
 
@@ -49,7 +49,7 @@ indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
     /// nested literals otherwise defeats type inference). Values are typed
     /// JSONValue so leading-dot shorthand works; keys pass via a string
     /// carrier case.
-    static func obj(_ parts: JSONValue...) -> JSONValue {
+    public static func obj(_ parts: JSONValue...) -> JSONValue {
         var out: [(key: String, value: JSONValue)] = []
         out.reserveCapacity(parts.count / 2)
         var i = 0
@@ -62,25 +62,25 @@ indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
         return .object(out)
     }
 
-    var objectPairs: [(key: String, value: JSONValue)]? {
+    public var objectPairs: [(key: String, value: JSONValue)]? {
         if case .object(let p) = self { return p }
         return nil
     }
-    var keys: [String]? { objectPairs?.map(\.key) }
-    var values: [JSONValue]? { objectPairs?.map(\.value) }
+    public var keys: [String]? { objectPairs?.map(\.key) }
+    public var values: [JSONValue]? { objectPairs?.map(\.value) }
 
-    subscript(key: String) -> JSONValue? {
+    public subscript(key: String) -> JSONValue? {
         guard case .object(let pairs) = self else { return nil }
         for p in pairs.reversed() where p.key == key { return p.value }
         return nil
     }
-    subscript(index: Int) -> JSONValue? {
+    public subscript(index: Int) -> JSONValue? {
         if case .array(let a) = self, a.indices.contains(index) { return a[index] }
         return nil
     }
 
     var isNull: Bool { if case .null = self { return true }; return false }
-    var boolValue: Bool? {
+    public var boolValue: Bool? {
         switch self {
         case .bool(let b): return b
         default: return nil
@@ -99,18 +99,18 @@ indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
         case .object(let o): return !o.isEmpty
         }
     }
-    var stringValue: String? { if case .string(let s) = self { return s }; return nil }
-    var arrayValue: [JSONValue]? { if case .array(let a) = self { return a }; return nil }
+    public var stringValue: String? { if case .string(let s) = self { return s }; return nil }
+    public var arrayValue: [JSONValue]? { if case .array(let a) = self { return a }; return nil }
     /// Int64 or Double; JSON booleans are NOT numbers for the §1 validators
     /// (Python `isinstance(v, bool)` exclusion), exposed separately.
-    var numberValue: Double? {
+    public var numberValue: Double? {
         switch self {
         case .int(let i): return Double(i)
         case .double(let d): return d
         default: return nil
         }
     }
-    var intValue: Int? {
+    public var intValue: Int? {
         switch self {
         case .int(let i): return Int(exactly: i) ?? (i > 0 ? .max : .min)
         case .double(let d): return d == d.rounded() && d.magnitude < 1e15 ? Int(d) : nil
@@ -122,22 +122,22 @@ indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
 
     /// Python `json.dumps(value, ensure_ascii=False)` byte length — the
     /// §1 state/response caps count CHARACTERS/bytes of that document.
-    static func jsonCharLen(_ v: JSONValue) -> Int { serialize(v, sortKeys: false).unicodeScalars.count }
+    public static func jsonCharLen(_ v: JSONValue) -> Int { serialize(v, sortKeys: false).unicodeScalars.count }
 
-    static func serialize(_ v: JSONValue, sortKeys: Bool = false) -> String {
+    public static func serialize(_ v: JSONValue, sortKeys: Bool = false) -> String {
         serialize(v, sortKeys: sortKeys, separators: (", ", ": "))
     }
 
     /// Python json.dumps separators: (item, key-value). Compact dumps use
     /// (",", ":"); the default pretty form uses (", ", ": ").
-    static func serialize(_ v: JSONValue, sortKeys: Bool, separators: (String, String)) -> String {
+    public static func serialize(_ v: JSONValue, sortKeys: Bool, separators: (String, String)) -> String {
         var out = ""
         out.reserveCapacity(64)
         write(v, to: &out, sortKeys: sortKeys, sep: separators)
         return out
     }
 
-    static func serializeSorted(_ v: JSONValue) -> String { serialize(v, sortKeys: true) }
+    public static func serializeSorted(_ v: JSONValue) -> String { serialize(v, sortKeys: true) }
 
     private static func write(_ v: JSONValue, to out: inout String, sortKeys: Bool, sep: (String, String)) {
         switch v {
@@ -168,7 +168,7 @@ indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
     }
 
     /// repr(float) shortest-roundtrip form Python uses (repr(1.0) == "1.0").
-    static func pyRepr(_ d: Double) -> String {
+    public static func pyRepr(_ d: Double) -> String {
         if d.isNaN { return "nan" }
         if d.isInfinite { return d < 0 ? "-inf" : "inf" }
         if d == d.rounded(), d.magnitude < 1e16 {
@@ -222,7 +222,7 @@ indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
     /// Parse one JSON document. Accepts NaN/Infinity (Python json.loads does)
     /// — the question-API validators then reject them as non-numbers where
     /// the Python side would too.
-    static func parse(_ text: String) -> JSONValue? {
+    public static func parse(_ text: String) -> JSONValue? {
         var p = JSONParser(Array(text.utf16))
         p.skipWS()
         guard let v = p.parseValue() else { return nil }
@@ -230,7 +230,7 @@ indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral {
         return p.peekIsEOF() ? v : nil
     }
 
-    static func parse(_ data: Data) -> JSONValue? {
+    public static func parse(_ data: Data) -> JSONValue? {
         guard let s = String(data: data, encoding: .utf8) else { return nil }
         return parse(s)
     }

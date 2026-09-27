@@ -4,7 +4,7 @@ import Foundation
 /// CONSTRUCTION (spec-v2 §1): probability keys == criteria keys exactly,
 /// Σp = 1 ± MASS_SLACK, choice == argmax (ties → criteria insertion order),
 /// confidence == p[choice].
-enum LayaOps {
+public enum LayaOps {
     // Consumer tolerances (spec §1), stated once.
     static let epsMass = 0.01 + 1e-12
     static let argmaxTolerance = 1e-9
@@ -30,9 +30,9 @@ enum LayaOps {
         return s.rounded(.toNearestOrEven) / scale
     }
 
-    struct OpsError: Error, CustomStringConvertible {
-        let message: String
-        var description: String { message }
+    public struct OpsError: Error, CustomStringConvertible {
+        public let message: String
+        public var description: String { message }
     }
 
     private static func checkQuestion(_ qtype: String, _ qname: String, _ q: JSONValue) throws {
@@ -59,7 +59,7 @@ enum LayaOps {
     /// Round to wire precision, divide by actual mass (order-preserving),
     /// spread the residual evenly over keys with headroom (each move
     /// ≤ RESIDUAL_MAX so argmax cannot flip), pin the leftover on the top key.
-    static func renormalize(_ qname: String, _ keys: [String], _ raw: [(key: String, value: Double)]) throws -> [(key: String, value: Double)] {
+    public static func renormalize(_ qname: String, _ keys: [String], _ raw: [(key: String, value: Double)]) throws -> [(key: String, value: Double)] {
         var rawMap: [String: Double] = [:]
         for p in raw { rawMap[p.key] = p.value }
         var vals: [String: Double] = [:]
@@ -108,7 +108,7 @@ enum LayaOps {
 
     /// First key with the max value — ties broken by criteria insertion order
     /// (same rule as the engine's argmax).
-    static func argmax(_ keys: [String], _ vals: [String: Double]) -> String {
+    public static func argmax(_ keys: [String], _ vals: [String: Double]) -> String {
         var best = keys[0]
         for k in keys.dropFirst() where vals[k]! > vals[best]! { best = k }
         return best
@@ -116,17 +116,23 @@ enum LayaOps {
 
     /// Engine result {task, chain, choice, confidence, acted, act_p, probs,
     /// latency_ms} as the Swift side produces it.
-    struct EngineOut {
-        var task: String
-        var chain: String
-        var probs: [(key: String, value: Double)]
-        var confidence: Double
-        var actP: Double
+    public struct EngineOut {
+        public var task: String
+        public var chain: String
+        public var probs: [(key: String, value: Double)]
+        public var confidence: Double
+        public var actP: Double
+        public init(task: String, chain: String,
+                    probs: [(key: String, value: Double)],
+                    confidence: Double, actP: Double) {
+            self.task = task; self.chain = chain; self.probs = probs
+            self.confidence = confidence; self.actP = actP
+        }
     }
 
     // MARK: - mappers (wire answer shapes)
 
-    static func answerFromNoul(qname: String, q: JSONValue, out: EngineOut) throws -> JSONValue {
+    public static func answerFromNoul(qname: String, q: JSONValue, out: EngineOut) throws -> JSONValue {
         try checkQuestion("noul", qname, q)
         guard q["criteria"] == nil || q["criteria"] == .null || q["criteria"] == .object([]) else {
             throw OpsError(message: "question \(qname): noul questions must have no criteria")
@@ -140,7 +146,7 @@ enum LayaOps {
         ])
     }
 
-    static func answerFromChoice(qname: String, q: JSONValue, out: EngineOut) throws -> JSONValue {
+    public static func answerFromChoice(qname: String, q: JSONValue, out: EngineOut) throws -> JSONValue {
         try checkQuestion("choice", qname, q)
         guard let crit = q["criteria"]?.objectPairs, crit.count >= 2 else {
             throw OpsError(message: "question \(qname): choice questions need a criteria mapping with ≥ 2 options")
@@ -160,7 +166,7 @@ enum LayaOps {
         return .object(pairs)
     }
 
-    static func answerFromScore(qname: String, q: JSONValue, out: EngineOut) throws -> JSONValue {
+    public static func answerFromScore(qname: String, q: JSONValue, out: EngineOut) throws -> JSONValue {
         try checkQuestion("score", qname, q)
         guard let crit = q["criteria"]?.arrayValue, crit.count >= 2 else {
             throw OpsError(message: "question \(qname): score questions need a criteria rubric list with ≥ 2 levels")
@@ -193,7 +199,7 @@ enum LayaOps {
         return .object(pairs)
     }
 
-    static func answerer(_ qtype: String) -> (String, JSONValue, EngineOut) throws -> JSONValue {
+    public static func answerer(_ qtype: String) -> (String, JSONValue, EngineOut) throws -> JSONValue {
         switch qtype {
         case "noul": return answerFromNoul
         case "score": return answerFromScore

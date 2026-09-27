@@ -7,20 +7,20 @@ import Foundation
 /// Byte-parity with Python matters: the token sequence is what the model
 /// scores, so the golden seq_cases in golden/tokenizer_golden.json must match
 /// id-for-id.
-enum Sequence {
-    static let qtypes: [String: Int] = ["choice": 0, "score": 1, "noul": 2]
-    static let qtypeNames: [Int: String] = [0: "choice", 1: "score", 2: "noul"]
+public enum Sequence {
+    public static let qtypes: [String: Int] = ["choice": 0, "score": 1, "noul": 2]
+    public static let qtypeNames: [Int: String] = [0: "choice", 1: "score", 2: "noul"]
 
     /// Python `serialize_state`: strings pass through, structured values
     /// become compact JSON (separators (",", ":")).
-    static func serializeState(_ state: JSONValue) -> String {
+    public static func serializeState(_ state: JSONValue) -> String {
         if case .string = state { return state.stringValue! }
         return JSONValue.serialize(state, sortKeys: false, separators: (",", ":"))
     }
 
     /// Python `render_criterion`: strings pass through; anything structured
     /// becomes JSON with separators (", ", ": ") so a rubric reads as JSON.
-    static func renderCriterion(_ value: JSONValue) -> String {
+    public static func renderCriterion(_ value: JSONValue) -> String {
         if case .string = value { return value.stringValue! }
         return JSONValue.serialize(value, sortKeys: false, separators: (", ", ": "))
     }
@@ -34,7 +34,7 @@ enum Sequence {
     /// Option texts in label-index order. Noul is always [false, true].
     /// `q` uses the wire shorthand keys from the golden ("t", "crit") and the
     /// full API keys ("type", "criteria") — both accepted, like the Python.
-    static func renderOptions(_ q: JSONValue) -> [String] {
+    public static func renderOptions(_ q: JSONValue) -> [String] {
         let t = q["type"]?.stringValue ?? q["t"]?.stringValue ?? ""
         let crit = q["criteria"] ?? q["crit"]
         switch t {
@@ -62,7 +62,7 @@ enum Sequence {
         }
     }
 
-    struct Built: Sendable {
+    public struct Built: Sendable {
         public let ids: [UInt32]
         public let markers: [Int]
     }
@@ -70,7 +70,7 @@ enum Sequence {
     /// Format: [CLS] <type> instructions [SEP] [MASK] opt0 [MASK] opt1 ...
     /// [SEP] state [SEP]. Mirrors build_sequence() argument-for-argument
     /// (tok(...) == tokenizer.encode, add_special_tokens=False).
-    static func buildSequence(tok: LayaTokenizer,
+    public static func buildSequence(tok: LayaTokenizer,
                               state: JSONValue,
                               q: JSONValue,
                               maxLength: Int = 512,
@@ -122,7 +122,7 @@ enum Sequence {
     // MARK: - confidence / calibration (verbatim ports)
 
     /// Normalized Shannon entropy confidence: 1 - H(p) / log(k).
-    static func confidenceFromProbs(_ p: [Double], k: Int) -> Double {
+    public static func confidenceFromProbs(_ p: [Double], k: Int) -> Double {
         if k < 2 { return 1.0 }
         let pk = Array(p.prefix(k))
         let ent = -pk.reduce(0.0) { $0 + $1 * log(max($1, 1e-12)) }
@@ -130,7 +130,7 @@ enum Sequence {
     }
 
     /// Expected Calibration Error across `bins` equal-width confidence bins.
-    static func eceScore(conf: [Double], correct: [Double], bins: Int = 15) -> Double {
+    public static func eceScore(conf: [Double], correct: [Double], bins: Int = 15) -> Double {
         if conf.isEmpty { return .nan }
         var e = 0.0
         for b in 0..<bins {
@@ -147,19 +147,19 @@ enum Sequence {
         return e
     }
 
-    static let tempMin = 0.5
-    static let tempMax = 5.0
+    public static let tempMin = 0.5
+    public static let tempMax = 5.0
 
     /// A fitted temperature below 1 sharpens logits (~10x at the shipped
     /// choice:11+ bucket 0.1006 — a 0.24 top probability publishes as 0.99).
     /// Confine to [lo, hi]; non-numeric falls back to 1.0.
-    static func clampTemperature(_ t: Double?, lo: Double = tempMin, hi: Double = tempMax) -> Double {
+    public static func clampTemperature(_ t: Double?, lo: Double = tempMin, hi: Double = tempMax) -> Double {
         guard let t, t.isFinite else { return 1.0 }
         return min(hi, max(lo, t))
     }
 
     /// "choice:3-5" style bucket key from qtype index and k.
-    static func tempBucket(qtype: Int, k: Int) -> String {
+    public static func tempBucket(qtype: Int, k: Int) -> String {
         let size = k <= 2 ? "2" : k <= 5 ? "3-5" : k <= 10 ? "6-10" : "11+"
         return "\(qtypeNames[qtype] ?? "?"):\(size)"
     }

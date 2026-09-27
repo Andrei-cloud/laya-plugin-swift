@@ -40,6 +40,7 @@ let package = Package(
             .product(name: "GRPC", package: "grpc-swift"),
         ]),
         .executableTarget(name: "layacoreai-probe", dependencies: ["LayaCore"]),
+        .executableTarget(name: "laya-engine-probe", dependencies: ["LayaCore"]),
         .executableTarget(name: "laya-tokenizer-bench", dependencies: ["LayaCore"]),
         .executableTarget(name: "laya-tokenizer-compile", dependencies: ["LayaCore"]),
         .testTarget(name: "LayaCoreTests", dependencies: ["LayaCore"]),

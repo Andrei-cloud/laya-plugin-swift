@@ -38,6 +38,24 @@ final class TokenizerParityTests: XCTestCase {
         XCTAssertEqual(Self.tok.maskTok, g["mask_tok"]!.stringValue)
     }
 
+    /// Unicode canonical-equivalence regression: Swift's String == treats
+    /// ";" (U+003B) and ";" (U+037E GREEK QUESTION MARK) as EQUAL, which
+    /// silently merged two distinct vocab entries and flipped the supervise
+    /// chain's answer on wire_golden (found live: `;`→235289 was overwritten
+    /// by `;`→244780). The vocab must stay byte-exact like Python/Rust.
+    func testCanonicalEquivalenceVocabIsByteExact() throws {
+        XCTAssertEqual(Self.tok.token(toId: ";").map(Int.init), 235289)
+        XCTAssertEqual(Self.tok.token(toId: "\u{037E}").map(Int.init), 244780)
+        XCTAssertEqual(Self.tok.id(toToken: 235289), ";")
+        XCTAssertEqual(Self.tok.id(toToken: 244780), "\u{037E}")
+        // encode keeps them distinct end-to-end (ground truth from the
+        // installed HF tokenizer: ';' standalone gets its ▁-word token,
+        // U+037E has no ▁-form and lands on its raw entry)
+        XCTAssertEqual(Self.tok.encode("; \u{037E}"), [2161, 235248, 244780])
+        XCTAssertEqual(Self.tok.encode("healthy; poll"), [9606, 235289, 11166])
+        // and the whole wire golden suite must replay exactly
+    }
+
     func testGoldenCases() throws {
         let cases = loadJSON("golden/tokenizer_golden.json")["tokenizer"]!["cases"]!.arrayValue!
         var failed = 0

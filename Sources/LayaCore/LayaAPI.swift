@@ -6,7 +6,7 @@ import Foundation
 ///
 /// Wire names are NOT ours to rename (spec-v2 §8): question types and
 /// envelope/answer fields stay exactly Jev-compat.
-enum LayaAPI {
+public enum LayaAPI {
     static let questionTypes: Set<String> = ["choice", "score", "noul"]
 
     static let maxStateChars = 60_000
@@ -29,26 +29,26 @@ enum LayaAPI {
         "malformed": 400, "timeout": 504,
     ]
 
-    static func isRetryable(_ code: String) -> Bool { retryable.contains(code) }
+    public static func isRetryable(_ code: String) -> Bool { retryable.contains(code) }
 
-    static func httpStatus(_ code: String) -> Int {
+    public static func httpStatus(_ code: String) -> Int {
         if let s = httpStatusMap[code] { return s }
         if code.hasPrefix("http_"), let n = Int(code.dropFirst(5)) { return n }
         return 400
     }
 
-    struct ApiError: Error, CustomStringConvertible {
-        let code: String
-        var detail: String? = nil
-        var invariant: String? = nil
-        var description: String {
+    public struct ApiError: Error, CustomStringConvertible {
+        public let code: String
+        public var detail: String? = nil
+        public var invariant: String? = nil
+        public var description: String {
             invariant == nil ? code : "\(code): \(invariant!)"
         }
-        var httpStatus: Int { LayaAPI.httpStatus(code) }
+        public var httpStatus: Int { LayaAPI.httpStatus(code) }
 
         /// {"status":"invalid_request","error":code[,invariant]} — never a
         /// secret, never prompt text.
-        func toResponse() -> JSONValue {
+        public func toResponse() -> JSONValue {
             var pairs: [(key: String, value: JSONValue)] = [
                 (key: "status", value: .string("invalid_request")),
                 (key: "error", value: .string(code)),
@@ -63,7 +63,7 @@ enum LayaAPI {
     /// Bearer check against the TOKEN alias (constant-time compare, no
     /// secret material in code/detail/body). No token configured → loopback
     /// trust (pass).
-    static func checkAuth(authorization: String?) throws {
+    public static func checkAuth(authorization: String?) throws {
         let expected = Naming.envAlias("TOKEN")
         guard let expected, !expected.isEmpty else { return }
         guard let authorization else {
@@ -94,14 +94,14 @@ enum LayaAPI {
 
     // MARK: - request validation
 
-    struct ValidatedRequest {
-        var state: JSONValue
-        var stateChars: Int
-        var model: String
-        var questions: [(name: String, q: JSONValue)]   // insertion order kept
+    public struct ValidatedRequest {
+        public var state: JSONValue
+        public var stateChars: Int
+        public var model: String
+        public var questions: [(name: String, q: JSONValue)]   // insertion order kept
     }
 
-    static func validateQuestion(name: String, q: JSONValue) throws {
+    public static func validateQuestion(name: String, q: JSONValue) throws {
         guard !name.isEmpty else {
             throw ApiError(code: "invalid_question_name",
                            detail: "question name must be a non-empty string")
@@ -155,7 +155,7 @@ enum LayaAPI {
         }
     }
 
-    static func validateRequest(_ payload: JSONValue) throws -> ValidatedRequest {
+    public static func validateRequest(_ payload: JSONValue) throws -> ValidatedRequest {
         guard case .object = payload else {
             throw ApiError(code: "envelope_not_object", detail: "request body must be a JSON object")
         }
@@ -203,7 +203,7 @@ enum LayaAPI {
         return v!.numberValue!
     }
 
-    static func validateAnswer(name: String, question: JSONValue, answer: JSONValue) throws {
+    public static func validateAnswer(name: String, question: JSONValue, answer: JSONValue) throws {
         guard case .object = answer else {
             throw ApiError(code: "invalid_response", detail: "answer \(name) must be an object",
                            invariant: "answer_shape")
@@ -317,7 +317,7 @@ enum LayaAPI {
         }
     }
 
-    static func validateAnswers(questions: [(name: String, q: JSONValue)],
+    public static func validateAnswers(questions: [(name: String, q: JSONValue)],
                                 answers: JSONValue) throws {
         guard case .object = answers else {
             throw ApiError(code: "invalid_response", detail: "answers must be a mapping",
@@ -345,7 +345,7 @@ enum LayaAPI {
     // MARK: - response size cap
 
     @discardableResult
-    static func checkResponseSize(_ payload: JSONValue) throws -> Int {
+    public static func checkResponseSize(_ payload: JSONValue) throws -> Int {
         let n = JSONValue.serialize(payload).utf8.count
         guard n <= maxResponseBytes else {
             throw ApiError(code: "response_too_large",
