@@ -99,10 +99,15 @@ ASSET_OK=$(python3 - <<'PY'
 import json, os
 p = os.path.expanduser("~/.config/laya/daemon.json")
 try:
-    a = json.load(open(p)).get("assets", "")
+    # expandingTildeInPath parity: the config may spell "~/..." (what
+    # the Settings window writes); Swift's LayaPaths expands it, so the
+    # prereq check must too — isdir("~/x") is always False.
+    a = os.path.expanduser(json.load(open(p)).get("assets", ""))
 except Exception:
     a = os.path.expanduser("~/Developer/ai/laya/models/coreai/laya-combined-f16.aimodel")
-print("yes" if os.path.isdir(a) else "no")
+# accept either the bundle dir itself or a release dir containing it
+print("yes" if os.path.isdir(a) or os.path.isdir(
+    os.path.join(a, "laya-combined-f16.aimodel")) else "no")
 PY
 )
 [ "$SWIFT_OK" = no ] && { act "PREREQ: no swift toolchain"; [ "$JSON_OUT" = 1 ] && jout missing; exit 2; }

@@ -32,17 +32,29 @@ it from `daemon.json`, so config and service can't drift.
 
 ```json
 {
-  "assets": "~/Developer/ai/laya/models/coreai/laya-combined-f16.aimodel",
-  "source": "~/Developer/ai/laya/models/source",
-  "unit": "gpu",
+  "assets": "~/.laya/model/laya-combined-f16.aimodel",
+  "source": "~/.laya/model/configs",
+  "unit": "ne",
   "port": 11270,
   "grpcPort": 11271,
   "token": ""
 }
 ```
 
-- `unit`: `gpu` (default) | `ne` (ANE; needs the re-exported asset for
-  full residency) | `cpu`
+- `assets`: the model bundle — either the `laya-combined-f16.aimodel`
+  directory itself or a release directory containing it. `~` expands.
+- `source`: the **runtime sidecar directory** — everything the engine
+  needs besides the weights: `tokenizer/tokenizer.json` (the 34 MB BPE
+  vocab — tokenization happens in Swift, not in the model),
+  `rl_agent_config.json` + the 11 per-chain `*.rl_agent_config.json`
+  (fitted calibration temperatures; without them confidences are
+  wrong), and `combined_provenance.json`. All of these ship **inside
+  the HF model repo** (`AndyInQtr/laya-decision-plugin`), so one
+  `hf download AndyInQtr/laya-decision-plugin --local-dir ~/.laya/model`
+  brings weights and sidecars together; `source` just points at its
+  `configs/`. If they are ever missing the engine fails at startup
+  with a named file — never silently.
+- `unit`: `ne` (Neural Engine — the shipped config) | `gpu` | `cpu`
 - `token`: optional loopback Bearer token. File is 0600; the token never
   appears in logs or the menu (secure text field in Settings).
 
