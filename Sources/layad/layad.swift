@@ -23,6 +23,10 @@ import NIOPosix
 @main
 struct Layad {
     static func main() async {
+        // LayaVersion is availability-ungated, so the version answer
+        // works even on macOS < 27 (where the daemon itself refuses to
+        // run) — one source of truth for all three binaries.
+        LayaVersion.handleIfRequested(CommandLine.arguments)
         guard #available(macOS 27.0, *) else {
             FileHandle.standardError.write(Data("layad: macOS 27 required (CoreAI)\n".utf8))
             exit(1)

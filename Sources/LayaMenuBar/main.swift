@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import LayaCore
 
 // LayaMenuBar — native menu bar companion for the layad daemon.
 //
@@ -64,6 +65,7 @@ func oneShotStatus() -> Never {
     exit(ok ? 0 : 1)
 }
 
+LayaVersion.handleIfRequested(argv)
 if argv.contains("--init-config") {
     try? writeConfig(.defaults)
     exit(0)

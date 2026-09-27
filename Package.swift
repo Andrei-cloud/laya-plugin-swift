@@ -47,7 +47,7 @@ let package = Package(
         // macOS menu bar companion: status dot + live /health stats +
         // launchd start/stop + settings editor (headless modes for
         // install.sh: --init-config, --render-plist, --status).
-        .executableTarget(name: "LayaMenuBar", dependencies: []),
+        .executableTarget(name: "LayaMenuBar", dependencies: ["LayaCore"]),
         .testTarget(name: "LayaCoreTests", dependencies: ["LayaCore"]),
         .testTarget(name: "LayaParityTests", dependencies: ["LayaCore", "LayaHTTP", "LayaGRPC"]),
     ]

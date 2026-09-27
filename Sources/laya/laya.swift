@@ -23,7 +23,7 @@ import NIOPosix
 struct LayaCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "laya",
-        version: "1.0",
+        version: LayaVersion.string,
         subcommands: [Ask.self, Health.self, Models.self,
                       TriageRow.self, MailRow.self, SuperviseRow.self])
 }

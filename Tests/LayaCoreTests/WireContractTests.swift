@@ -9,6 +9,13 @@ import XCTest
 /// error vocabulary as the Python.
 @MainActor
 final class WireContractTests: XCTestCase {
+
+    func testVersionSingleSource() throws {
+        // The shipped version. Release tags (v0.1.0) and the GitHub
+        // release must carry exactly this value; a bump that forgets
+        // the tag is caught here.
+        XCTAssertEqual(LayaVersion.string, "0.1.0")
+    }
     func loadJSON(_ rel: String) -> JSONValue {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
