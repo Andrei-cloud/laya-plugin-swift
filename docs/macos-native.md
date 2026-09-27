@@ -32,8 +32,7 @@ it from `daemon.json`, so config and service can't drift.
 
 ```json
 {
-  "assets": "~/.laya/model/laya-combined-f16.aimodel",
-  "source": "~/.laya/model/configs",
+  "assets": "~/.laya/model",
   "unit": "ne",
   "port": 11270,
   "grpcPort": 11271,
@@ -41,19 +40,17 @@ it from `daemon.json`, so config and service can't drift.
 }
 ```
 
-- `assets`: the model bundle — either the `laya-combined-f16.aimodel`
-  directory itself or a release directory containing it. `~` expands.
-- `source`: the **runtime sidecar directory** — everything the engine
-  needs besides the weights: `tokenizer/tokenizer.json` (the 34 MB BPE
-  vocab — tokenization happens in Swift, not in the model),
-  `rl_agent_config.json` + the 11 per-chain `*.rl_agent_config.json`
-  (fitted calibration temperatures; without them confidences are
-  wrong), and `combined_provenance.json`. All of these ship **inside
-  the HF model repo** (`AndyInQtr/laya-decision-plugin`), so one
-  `hf download AndyInQtr/laya-decision-plugin --local-dir ~/.laya/model`
-  brings weights and sidecars together; `source` just points at its
-  `configs/`. If they are ever missing the engine fails at startup
-  with a named file — never silently.
+- `assets`: the **model root** — the directory you downloaded the HF
+  model repo into. It is deliberately the ONLY path parameter: the HF
+  repo ships everything the engine needs together —
+  `laya-combined-f16.aimodel/` (weights), `combined_provenance.json`
+  (chain identity + shapes), `configs/tokenizer/` (34 MB BPE vocab),
+  and the `configs/*.rl_agent_config.json` calibration temperatures —
+  and the daemon DERIVES all of them from the root. Pointing at the
+  bundle itself or a legacy release dir also resolves (same meaning).
+  An incomplete download fails at startup naming the missing file;
+  it is never silently patched over.
+  Download: `hf download AndyInQtr/laya-decision-plugin --local-dir ~/.laya/model`.
 - `unit`: `ne` (Neural Engine — the shipped config) | `gpu` | `cpu`
 - `token`: optional loopback Bearer token. File is 0600; the token never
   appears in logs or the menu (secure text field in Settings).

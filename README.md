@@ -31,7 +31,15 @@ Model repo: [`AndyInQtr/laya-decision-plugin`](https://huggingface.co/AndyInQtr/
 ## Install (human, ~2 minutes)
 
 Requirements: Apple Silicon, macOS 27 (CoreAI runtime), Xcode toolchain
-(`swift build`), and the model asset from the HF repo.
+(`swift build`), and the model — weights AND sidecars ship together in
+one HF download:
+
+```sh
+hf download AndyInQtr/laya-decision-plugin --local-dir ~/.laya/model
+```
+
+That single directory is the only path the stack needs (the tokenizer
+and calibration configs are derived from it).
 
 ```sh
 git clone https://github.com/Andrei-cloud/laya-plugin-swift.git

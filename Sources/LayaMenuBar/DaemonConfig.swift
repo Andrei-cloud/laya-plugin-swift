@@ -11,8 +11,13 @@ import Foundation
 // is written 0600 and the token never appears in logs or the menu.
 
 struct DaemonConfig: Codable, Equatable {
+    /// The model root — the directory `hf download
+    /// AndyInQtr/laya-decision-plugin` puts the bundle AND its
+    /// sidecars (configs/tokenizer, rl_agent_config calibration,
+    /// combined_provenance.json) into. There is deliberately NO
+    /// `source` parameter: everything else is derived from this
+    /// directory (see LayaPaths.probe).
     var assets: String
-    var source: String
     var unit: String          // gpu | ne | cpu
     var port: Int
     var grpcPort: Int
@@ -39,14 +44,13 @@ struct DaemonConfig: Codable, Equatable {
 
     static var defaults: DaemonConfig {
         // Derived from $HOME at runtime (repo rule: no personal paths in
-        // tracked files or literals).
-        let models = (NSHomeDirectory() as NSString)
-            .appendingPathComponent("Developer/ai/laya/models")
-        return DaemonConfig(
-            assets: (models as NSString)
-                .appendingPathComponent("coreai/laya-combined-f16.aimodel"),
-            source: (models as NSString).appendingPathComponent("source"),
-            unit: "gpu", port: 11270, grpcPort: 11271, token: "")
+        // tracked files or literals). ~/.laya/model is the documented
+        // HF download location:
+        //   hf download AndyInQtr/laya-decision-plugin --local-dir ~/.laya/model
+        DaemonConfig(
+            assets: (NSHomeDirectory() as NSString)
+                .appendingPathComponent(".laya/model"),
+            unit: "ne", port: 11270, grpcPort: 11271, token: "")
     }
 
     static func load() -> DaemonConfig {
@@ -75,9 +79,10 @@ struct DaemonConfig: Codable, Equatable {
 
     /// launchd EnvironmentVariables for the daemon.
     var environment: [String: String] {
+        // LAYA_ASSETS carries the model root; the daemon derives the
+        // sidecar dir from it (LayaPaths). No LAYA_SOURCE.
         var env: [String: String] = [
             "LAYA_ASSETS": assets,
-            "LAYA_SOURCE": source,
             "LAYA_UNIT": unit,
             "LAYA_PORT": String(port),
             "LAYA_GRPC_PORT": String(grpcPort),

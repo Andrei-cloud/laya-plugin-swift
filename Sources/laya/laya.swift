@@ -68,7 +68,7 @@ extension LayaCLI {
             if code != 0 { throw ExitCode(code) }
         }
 
-        /// Python engine.py default: LAYA_SOURCE or <assets>/configs; the dev
+        /// engine.py default: sidecars derive from the model root; LAYA_SOURCE
         /// layout keeps the tokenizer at <models>/source — try configs first.
         ///
         /// LAYA_ASSETS convention (engine.py:7): a DIRECTORY containing
@@ -81,41 +81,12 @@ extension LayaCLI {
         /// looks healthy while the in-process inference never loaded
         /// (found by the rows differential, 2026-09-27).
         static func resolvePaths() -> (assets: String, source: String) {
-            let (assets0, source0) = LayaPaths.resolve()  // env -> daemon.json -> ~/.laya/model
-            var assets = assets0
-            _ = source0  // the leaf-name probing below keeps engine.py spelling rules
-            // NOTE: a .aimodel bundle is ITSELF a directory, so "path is a
-            // directory" does not mean "dir containing the bundle". Distinguish
-            // by the bundle leaf name INSIDE the path (Python convention =
-            // release dir; Swift convenience = direct bundle path).
-            var isDir: ObjCBool = false
-            let existsAsDir = FileManager.default.fileExists(atPath: assets, isDirectory: &isDir)
-                && isDir.boolValue
-            let bundle = (assets as NSString)
-                .appendingPathComponent("laya-combined-f16.aimodel")
-            let dirSpelling = existsAsDir
-                && FileManager.default.fileExists(atPath: bundle)
-            var source: String
-            if let env = Naming.envAlias("SOURCE") {
-                source = env
-            } else if dirSpelling {
-                // engine.py:138 exactly: <assets>/configs
-                source = (assets as NSString).appendingPathComponent("configs")
-            } else {
-                // Direct-bundle spelling (Swift convenience): Python's
-                // <assets>/configs never exists there; probe it, then the
-                // dev layout <models>/source.
-                let configs = (assets as NSString).appendingPathComponent("configs")
-                if FileManager.default.fileExists(atPath: (configs as NSString)
-                    .appendingPathComponent("tokenizer/tokenizer.json")) {
-                    source = configs
-                } else {
-                    let models = (assets as NSString).appendingPathComponent("../..")
-                    source = (models as NSString).appendingPathComponent("source")
-                }
-            }
-            if dirSpelling { assets = bundle }
-            return (assets, source)
+            // One root identifies the installation; the sidecar dir is
+            // derived from it (LayaPaths: env -> daemon.json ->
+            // ~/.laya/model, HF layout). Kept as (assets, source) for
+            // Engine.Config's naming.
+            let r = LayaPaths.resolve()
+            return (r.bundle, r.sidecar)
         }
 
         // MARK: local (in-process Core AI)

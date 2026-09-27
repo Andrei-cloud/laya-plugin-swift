@@ -100,18 +100,33 @@ import json, os
 p = os.path.expanduser("~/.config/laya/daemon.json")
 try:
     # expandingTildeInPath parity: the config may spell "~/..." (what
-    # the Settings window writes); Swift's LayaPaths expands it, so the
-    # prereq check must too — isdir("~/x") is always False.
-    a = os.path.expanduser(json.load(open(p)).get("assets", ""))
+    # the Settings window writes); Swift's LayaPaths expands it too.
+    a = os.path.expanduser(json.load(open(p)).get("assets", "")) or \
+        os.path.expanduser("~/.laya/model")
 except Exception:
-    a = os.path.expanduser("~/Developer/ai/laya/models/coreai/laya-combined-f16.aimodel")
-# accept either the bundle dir itself or a release dir containing it
-print("yes" if os.path.isdir(a) or os.path.isdir(
-    os.path.join(a, "laya-combined-f16.aimodel")) else "no")
+    a = os.path.expanduser("~/.laya/model")
+def has(d, rel): return os.path.exists(os.path.normpath(os.path.join(d, rel)))
+def complete(d):
+    # the daemon derives everything from the model root — validate the
+    # same three things it will demand: bundle, provenance, tokenizer
+    # (root spelling, bundle spelling, or legacy release dir).
+    root = os.path.normpath(d)
+    if os.path.basename(root) == "laya-combined-f16.aimodel":
+        root = os.path.dirname(root)
+    elif has(root, "laya-combined-f16.aimodel"):
+        pass
+    else:
+        return False
+    if not (has(root, "combined_provenance.json")
+            or has(os.path.join(root, ".."), "combined_provenance.json")):
+        return False
+    return (has(root, "configs/tokenizer/tokenizer.json")
+            or has(root, "tokenizer/tokenizer.json"))
+print("yes" if complete(a) else "no")
 PY
 )
 [ "$SWIFT_OK" = no ] && { act "PREREQ: no swift toolchain"; [ "$JSON_OUT" = 1 ] && jout missing; exit 2; }
-[ "$ASSET_OK" = no ] && { act "PREREQ: laya-combined-f16.aimodel not found (point ~/.config/laya/daemon.json assets at it)"; [ "$JSON_OUT" = 1 ] && jout missing; exit 2; }
+[ "$ASSET_OK" = no ] && { act "PREREQ: model incomplete at the configured root — need laya-combined-f16.aimodel + combined_provenance.json + configs/tokenizer (hf download AndyInQtr/laya-decision-plugin --local-dir ~/.laya/model)"; [ "$JSON_OUT" = 1 ] && jout missing; exit 2; }
 
 # ---------- 3. stop previous versions (idempotent bootouts) --------------
 for label in com.laya.decisiond com.laya.daemon com.laya.menubar; do

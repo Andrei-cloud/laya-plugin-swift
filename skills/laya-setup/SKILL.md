@@ -34,11 +34,13 @@ curl -s http://127.0.0.1:11270/health
 
 ## Configuration (single source of truth)
 
-`~/.config/laya/daemon.json` (0600):
+`~/.config/laya/daemon.json` (0600) — `assets` is the model root, the
+directory `hf download AndyInQtr/laya-decision-plugin --local-dir
+~/.laya/model` fills; tokenizer + calibration configs are DERIVED from
+it (there is no separate source parameter):
 
 ```json
-{"assets": "~/.laya/model/laya-combined-f16.aimodel",
- "source": "~/.laya/model",
+{"assets": "~/.laya/model",
  "unit": "ne", "port": 11270, "grpcPort": 11271, "token": ""}
 ```
 

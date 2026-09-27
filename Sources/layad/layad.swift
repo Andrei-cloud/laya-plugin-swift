@@ -12,10 +12,10 @@ import NIOPosix
 /// /v1/systemone, laya_http bridge /decide + /guard), and the gRPC
 /// surface (laya.v1.LayaDecision) for the Swift CLI. Binds 127.0.0.1 only.
 ///
-/// Env contract (same as Python engine.py): LAYA_ASSETS (required),
-/// LAYA_SOURCE (default <assets>/../source layout or configs dir),
-/// LAYA_UNIT gpu|ne|cpu, LAYA_TOKEN (Bearer), LAYA_PORT (HTTP 11270),
-/// LAYA_GRPC_PORT (gRPC 11271), LAYA_REQUEST_BUDGET_S.
+/// Env contract: LAYA_ASSETS = the model root (HF download dir; the
+/// sidecar dir is derived from it — LAYA_SOURCE remains a dev-only
+/// override), LAYA_UNIT gpu|ne|cpu, LAYA_TOKEN (Bearer), LAYA_PORT
+/// (HTTP 11270), LAYA_GRPC_PORT (gRPC 11271), LAYA_REQUEST_BUDGET_S.
 ///
 /// Loads + shape-warms the Engine BEFORE binding (the Python daemon's
 /// startup order: /health reports honest warm state).
@@ -36,18 +36,11 @@ struct Layad {
 
     @available(macOS 27.0, *)
     static func run() async {
-        // No machine-specific defaults in source: env ->
-        // ~/.config/laya/daemon.json -> ~/.laya/model (see LayaPaths).
-        let assets = LayaPaths.resolve().assets
-        var source = LayaPaths.resolve().source
-        if !FileManager.default.fileExists(atPath: (source as NSString)
-            .appendingPathComponent("tokenizer/tokenizer.json")) {
-            // dev layout: <models>/coreai/<asset>, tokenizer at <models>/source
-            let alt = ((assets as NSString).appendingPathComponent("../..") as NSString)
-                .appendingPathComponent("source")
-            if FileManager.default.fileExists(atPath: (alt as NSString)
-                .appendingPathComponent("tokenizer/tokenizer.json")) { source = alt }
-        }
+        // One root identifies the installation (HF layout): env ->
+        // ~/.config/laya/daemon.json -> ~/.laya/model. The sidecar dir
+        // (tokenizer + calibration) is DERIVED from it — no `source`
+        // parameter. See LayaPaths.
+        let (assets, source) = LayaPaths.resolve()
         let unit = Naming.envAlias("UNIT") ?? "gpu"
         let httpPort = UInt16(Naming.envAlias("PORT") ?? "11270") ?? 11270
         let grpcPort = UInt16(Naming.envAlias("GRPC_PORT") ?? "11271") ?? 11271

@@ -31,14 +31,14 @@ running). Proceed:
 Exit `0` → installed and WARM (re-read `daemon.calls`/`chains` from the
 JSON as your proof). Exit `1` → bootstrap done but not warm within
 120 s: read the `log` path from the JSON, do not retry blindly. Exit
-`2` → prerequisites missing (swift toolchain, or the model asset is not
-on disk at the configured path) — surface to the human; installing the
-~1 GB model asset is their call:
+`2` → prerequisites missing (swift toolchain, or the model is not
+installed at the configured root) — surface to the human; downloading
+the ~1 GB model is their call:
 
 ```sh
 hf download AndyInQtr/laya-decision-plugin --local-dir ~/.laya/model
-# then set assets=~/.laya/model/laya-combined-f16.aimodel,
-#      source=~/.laya/model/configs in ~/.config/laya/daemon.json
+# one directory, no other path parameters: assets/tokenizer/calibration
+# files are derived from the model root by the daemon itself.
 ./Scripts/agent_install.sh --json
 ```
 

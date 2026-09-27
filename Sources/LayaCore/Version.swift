@@ -7,7 +7,12 @@ import Foundation
 /// whether to reinstall).
 public enum LayaVersion {
     /// Semantic version of the Swift port (layad + laya + laya-menubar).
-    public static let string = "0.1.0"
+    /// 0.2.0: the `source` parameter is GONE — the model root derives
+    /// everything (HF layout). Old configs load unchanged (unknown keys
+    /// ignored, legacy "assets" honored). Agents that pinned 0.1.0 must
+    /// upgrade to get derivation; the agent installer's version rule
+    /// only rebuilds on a bump, so schema-visible changes ALWAYS bump.
+    public static let string = "0.2.0"
 
     /// One-line identity printed by --version everywhere:
     ///   layad 0.1.0 (swift; coreai; macos-27)

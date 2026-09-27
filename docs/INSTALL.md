@@ -7,7 +7,7 @@ daemon exits cleanly with "macOS 27 required" below it).
 ## 1. Prerequisites
 
 - Xcode (or CLT) with a Swift 6.3+ toolchain: `swift --version`
-- The model asset. Download from
+- The model. Download from
   [AndyInQtr/laya-decision-plugin](https://huggingface.co/AndyInQtr/laya-decision-plugin):
 
   ```sh
@@ -15,8 +15,9 @@ daemon exits cleanly with "macOS 27 required" below it).
       --local-dir ~/.laya/model
   ```
 
-  You need `laya-combined-f16.aimodel/` (≈1 GB, LFS) and the
-  `configs/` directory (the tokenizer lives at `configs/tokenizer/`).
+  One download, one directory: the bundle (≈1 GB, LFS), provenance,
+  tokenizer, and calibration configs all live in that root and the
+  daemon derives everything from it — there is no second path to set.
 
 ## 2. Install
 
@@ -37,15 +38,15 @@ The installer is safe to re-run at any time. It:
 5. generates both launchd plists from the config;
 6. bootstraps the jobs and waits (≤90 s) for `/health` to report warm.
 
-Point the config at your asset before step 5 if it isn't the default
-path:
+Point the config at your model root before step 5 if it isn't
+`~/.laya/model`:
 
 ```sh
 python3 - <<'EOF'
 import json, os
 p = os.path.expanduser("~/.config/laya/daemon.json")
-c = json.load(open(p)); c["assets"] = os.path.expanduser("~/.laya/model/laya-combined-f16.aimodel")
-c["source"] = os.path.expanduser("~/.laya/model/configs"); c["unit"] = "ne"
+c = json.load(open(p)); c["assets"] = os.path.expanduser("~/dev/models/laya")
+c.pop("source", None); c["unit"] = "ne"   # 'source' no longer exists
 json.dump(c, open(p, "w"), indent=2, sort_keys=True); os.chmod(p, 0o600)
 EOF
 ~/.local/bin/laya-menubar --render-plist

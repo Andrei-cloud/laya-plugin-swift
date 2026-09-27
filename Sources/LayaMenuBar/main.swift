@@ -125,7 +125,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     let onSave: (DaemonConfig) -> Void
 
     private let assetsField = NSTextField(string: "")
-    private let sourceField = NSTextField(string: "")
     private let unitPopup = NSPopUpButton()
     private let portField = NSTextField(string: "")
     private let grpcField = NSTextField(string: "")
@@ -154,7 +153,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         w.delegate = self
 
         assetsField.stringValue = cfg.assets
-        sourceField.stringValue = cfg.source
+        assetsField.placeholderString = "model root (hf download --local-dir target)"
         portField.stringValue = String(cfg.port)
         grpcField.stringValue = String(cfg.grpcPort)
         tokenField.placeholderString = "loopback Bearer token (blank = none)"
@@ -163,8 +162,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         unitPopup.selectItem(withTitle: cfg.unit)
 
         let grid = NSGridView(views: [
-            [label("assets"), assetsField],
-            [label("source"), sourceField],
+            [label("model"), assetsField],
             [label("unit"), unitPopup],
             [label("http port"), portField],
             [label("grpc port"), grpcField],
@@ -206,8 +204,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     @objc private func saveTapped() {
         var next = cfg
         next.assets = assetsField.stringValue.trimmingCharacters(in: .whitespaces)
-        next.source = sourceField.stringValue.trimmingCharacters(in: .whitespaces)
-        next.unit = unitPopup.titleOfSelectedItem ?? "gpu"
+        next.unit = unitPopup.titleOfSelectedItem ?? "ne"
         next.port = Int(portField.stringValue) ?? cfg.port
         next.grpcPort = Int(grpcField.stringValue) ?? cfg.grpcPort
         next.token = tokenField.stringValue
