@@ -260,6 +260,11 @@ public indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral 
         return out
     }
 
+    /// Convenience: separators only (insertion key order).
+    public static func serialize(_ v: JSONValue, separators: (String, String)) -> String {
+        serialize(v, sortKeys: false, separators: separators)
+    }
+
     public static func serializeSorted(_ v: JSONValue) -> String { serialize(v, sortKeys: true) }
 
     /// Python `json.dumps(v, sort_keys=True)` with DEFAULTS — ensure_ascii

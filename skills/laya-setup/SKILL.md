@@ -72,9 +72,14 @@ fall back to the warm daemon automatically.
 
 ## Harness registration
 
-- **Hermes MCP:** `printf '\n' | hermes mcp add laya --url http://127.0.0.1:11270/mcp`
-  — the Swift daemon serves the question API wire; the MCP-HTTP surface
-  lives on the legacy Python daemon (which cannot share :11270).
+- **Hermes MCP (daemon, recommended):** `printf '\n' | hermes mcp add laya
+  --url http://127.0.0.1:11270/mcp` — the Swift daemon serves MCP
+  streamable-HTTP natively since 0.3.0 (stateless; `laya_ask` answers are
+  byte-identical to POST /v1/laya — gated by `Scripts/diff_mcp.py`).
+- **Hermes MCP (stdio, no daemon):** `printf '\n' | hermes mcp add laya
+  --command ~/.local/bin/laya --args mcp` — the laya binary IS the MCP
+  server (proxies to the daemon; `--args mcp --local` loads CoreAI
+  in-process, ~7 s with the AOT cache).
 - **Any HTTP client:** POST the question payload above.
 
 ## Health / doctor

@@ -112,7 +112,7 @@ public enum K {
 /// may ACT only on "allow" at confidence >= guardActConfidence.
 public let guardActConfidence = 0.7
 
-func guardrailVerdict(choice: String, confidence: Double, floor: Double? = nil) -> String {
+public func guardrailVerdict(choice: String, confidence: Double, floor: Double? = nil) -> String {
     let fl = floor ?? guardActConfidence
     if choice == "block" { return "deny" }
     if choice == "ask_user" || confidence < fl { return "confirm" }

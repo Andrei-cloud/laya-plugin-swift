@@ -57,7 +57,7 @@ struct Layad {
               terminator: "\n")
 
         // HTTP (exact Python wire)
-        let router = HTTPRouter(engine: engine)
+        let router = HTTPRouter(engine: engine, mcp: MCPBridge(engine))
         let server: HTTPServer
         do {
             server = try HTTPServer(port: httpPort) { await router.handle($0) }
@@ -96,8 +96,14 @@ struct Layad {
 @available(macOS 27.0, *)
 struct HTTPRouter: Sendable {
     let engine: Engine
+    let mcp: MCPBridge
 
     func handle(_ req: HTTPRequest) async -> HTTPResponse {
+        // MCP streamable-HTTP mount (stateless) — same port, same
+        // Engine, same auth env as everything else.
+        if let resp = await MCPHTTP.handle(req, bridge: mcp) {
+            return resp
+        }
         if req.path == "/health" && req.method == "GET" {
             let stats = await (engine.chainOrder, engine.calls, engine.totalMs, engine.warm)
             return HTTPResponse.json(200, QuestionAPI.healthPayload(

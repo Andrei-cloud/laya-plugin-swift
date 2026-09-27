@@ -25,7 +25,8 @@ struct LayaCLI: AsyncParsableCommand {
         commandName: "laya",
         version: LayaVersion.string,
         subcommands: [Ask.self, Health.self, Models.self,
-                      TriageRow.self, MailRow.self, SuperviseRow.self])
+                      TriageRow.self, MailRow.self, SuperviseRow.self,
+                      MCPCommand.self])
 }
 
 // MARK: ask

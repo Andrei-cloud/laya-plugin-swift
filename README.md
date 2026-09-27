@@ -88,11 +88,28 @@ Exit codes: `0` answered · `2` invalid input · `3` engine could not
 build. Stdout is exactly ONE JSON document (strip nothing; it is the
 whole document).
 
+### MCP (any harness: Hermes, Claude Desktop, opencode, …)
+
+Three tools — `laya_ask` (wire questions), `laya_guard` (safety
+verdict for one command), `laya_status` (health). Two native-Swift
+mounts, one dispatch — answers are byte-identical across them
+(`Scripts/diff_mcp.py` gates it):
+
+```sh
+# streamable-HTTP on the warm daemon (recommended — one model, all sessions):
+printf '\n' | hermes mcp add laya --url http://127.0.0.1:11270/mcp
+
+# stdio, zero dependencies (the laya binary IS the server):
+printf '\n' | hermes mcp add laya --command ~/.local/bin/laya --args mcp
+# add --args mcp --local to load CoreAI in-process instead of proxying
+```
+
 ## Configuration
 
 `~/.config/laya/daemon.json` is the single source of truth
-(`assets`, `source`, `unit: ne|gpu|cpu`, `port`, `grpcPort`, `token`);
-launchd plists are **generated** from it by `laya-menubar
+(`assets` — the model root, `unit: ne|gpu|cpu`, `port`, `grpcPort`,
+`token`); everything else (tokenizer, calibration) is derived from the
+model root. Launchd plists are **generated** from it by `laya-menubar
 --render-plist` — never edit the plists by hand. The menu bar Settings…
 window edits the config and kickstarts the daemon in one click.
 
