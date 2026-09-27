@@ -17,18 +17,21 @@ public enum LayaOps {
     static let massSlack = 1e-12
     static let residualMax = 1e-9
 
-    /// Python round(v, 10): CPython rounds on the shortest decimal repr, so
-    /// values that are already ≤10-decimal clean (engine.decide emits 4dp)
-    /// pass through bit-exactly. The same holds for our clamp/min/max use:
-    /// we only ever round values produced by round(_, 4) upstream, hence a
-    /// plain binary nearest rounding at 1e10 scale is exact for them.
-    static func roundPy(_ v: Double) -> Double {
-        let scale = 1e10
-        let s = v * scale
-        // Guard overflow beyond exact integer range.
-        if !s.isFinite || abs(s) > 9.2e18 { return v }
-        return s.rounded(.toNearestOrEven) / scale
+    /// Python round(v, 10): CPython rounds half-to-even on the DECIMAL
+    /// repr — a binary multiply-and-round at 1e10 diverges by 1 ULP on
+    /// values like 0.3211000000000001 (wire-visible). Darwin's
+    /// printf %.<nd>f is the same algorithm (glibc/mpdecimal lineage):
+    /// format, parse back, preserve signed zero. Bit-exact vs CPython on
+    /// 4021/4021 fuzz cases (fuzz harness: see git history of this file).
+    static func roundPy(_ v: Double, _ nd: Int = roundDecimals) -> Double {
+        if !v.isFinite || abs(v) > 1e15 { return v }
+        let s = String(format: "%.\(nd)f", v)
+        let d = Double(s) ?? v
+        if d == 0.0 && s.hasPrefix("-") { return -0.0 }
+        return d
     }
+
+    static func roundPy(_ v: Double) -> Double { roundPy(v, roundDecimals) }
 
     public struct OpsError: Error, CustomStringConvertible {
         public let message: String

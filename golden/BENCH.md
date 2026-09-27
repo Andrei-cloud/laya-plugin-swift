@@ -106,3 +106,36 @@ tokenizer dir at `/Users/andrei/Developer/ai/laya/models/source/tokenizer`).
   Swift 6.4 overlay; use `NDArray.View(span: array.span, shape:)` in
   `InferenceFunction.Inputs` and keep build+run in one frame (Inputs is
   lifetime-dependent on the borrowed arrays).
+
+# Service-level A/B — Python daemon vs Swift daemon (2026-09-27)
+
+`Scripts/bench_service.py`: both daemons up (python :11270, swift layad
+:11370), same golden payloads, client-side end-to-end HTTP latency,
+sequential (both serialize inference), median-of-2×20 sweeps, answers
+compared byte-for-byte.
+
+| daemon | n | p50 | p95 | min | answers-match |
+|--------|--:|----:|----:|----:|--------------:|
+| python | 200 | 22.64 ms | 63.77 ms | 20.87 | 200/200 |
+| swift  | 200 | 22.90 ms | 64.86 ms | 21.19 | 200/200 |
+| swift-2nd | 200 | 22.96 ms | 65.29 ms | 21.35 | 200/200 |
+| python-2nd | 200 | 22.35 ms | 64.31 ms | 21.41 | 200/200 |
+
+**Parity at the service level (0.98×, within noise): the ~19.5 ms CoreAI
+pass dominates both stacks** — Python calls the same native CoreAI/MPSGraph
+runtime, so the Python-vs-Swift delta at serving level is the *request
+overhead*, which is ≈3 ms on both sides (Python http.server + json vs Swift
+NWListener + JSONValue). The Swift wins are where the work is per-token or
+per-process: tokenizer 2.55× (above), CLI cold-start, and process footprint.
+Transport parity: all 15 goldens × {http, grpc} = **20/20 byte-identical**
+through the Swift daemon (CLI → layad), after the `roundPy` fix.
+
+`roundPy` (laya_ops wire rounding) was a binary multiply-round at 1e10;
+CPython rounds half-to-even on the *decimal* repr — divergent by 1 ULP on
+values like 0.3211000000000001 (wire-visible in probabilities). Darwin
+`printf %.10f` is bit-exact vs CPython `round(_, 10)` on 4021/4021 fuzz
+cases (incl. signed zero); `Engine.round4` verified bit-exact as-is on
+[0,1).
+
+CLI `--backend http` round trip incl. process spawn: p50 40 ms (≈8 ms
+engine load + ≈22 ms pass + spawn).

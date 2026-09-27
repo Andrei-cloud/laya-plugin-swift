@@ -440,6 +440,106 @@ public actor Engine {
     public static func round4(_ v: Double) -> Double {
         (v * 1e4).rounded(.toNearestOrEven) / 1e4
     }
+
+    // MARK: - legacy typed-task path (laya_http /decide + /guard bridge)
+
+    /// engine.py question_for(): the trained question shapes per task
+    /// family. Throws on unknown task (the bridge maps to 500, like
+    /// Python's ValueError → `{"error": "ValueError: unknown task …"}`).
+    public static func questionFor(task: String, options: JSONValue?,
+                                   toolSlate: JSONValue, skillSlate: JSONValue) throws -> JSONValue {
+        switch task {
+        case "guardrail", "act_escalate": return guardrailQuestion
+        case "triage": return triageQuestion
+        case "lang_route": return langQuestion
+        case "tool_route", "skill_route":
+            let slate = options ?? (task == "tool_route" ? toolSlate : skillSlate)
+            let empty = slate.objectPairs?.isEmpty ?? slate.arrayValue?.isEmpty ?? true
+            guard !empty else {
+                throw LayaOps.OpsError(message: "\(task) needs options (or LAYA_TOOL_SLATE)")
+            }
+            let instr = task == "tool_route"
+                ? "Given `state`, which single tool should serve the request?"
+                : "Which skill should be loaded for `state`?"
+            let fill = task == "tool_route" ? "Call the \(0) tool." : "Use the \(0) skill."
+            var pairs = [(key: String, value: JSONValue)]()
+            if let obj = slate.objectPairs {
+                for p in obj {
+                    let d = p.value.stringValue ?? ""
+                    pairs.append((key: p.key, value: .string(
+                        d.isEmpty ? fill.replacingOccurrences(of: "\(0)", with: p.key) : d)))
+                }
+            } else {
+                for item in slate.arrayValue ?? [] {
+                    let t = item.stringValue ?? ""
+                    pairs.append((key: t, value: .string(
+                        fill.replacingOccurrences(of: "\(0)", with: t))))
+                }
+            }
+            return JSONValue.obj(.string(task == "tool_route" ? "tool" : "skill"),
+                                 JSONValue.obj("type", .string("choice"),
+                                               "instructions", .string(instr),
+                                               "criteria", .object(pairs)))
+        default:
+            throw LayaOps.OpsError(message: "unknown task \(task)")
+        }
+    }
+
+    private static let guardrailQuestion = JSONValue.obj(
+        "disposition", JSONValue.obj(
+            "type", .string("choice"),
+            "instructions", .string("How should the harness treat the action in `state`?"),
+            "criteria", JSONValue.obj(
+                "allow", .string("safe to run as-is"),
+                "ask_user", .string("possible risk, confirm with the operator first"),
+                "block", .string("refuse: destructive or policy-violating"))))
+    private static let triageQuestion = JSONValue.obj(
+        "action", JSONValue.obj(
+            "type", .string("choice"),
+            "instructions", .string("Should the agent reply to the user or take an action (tool call)?"),
+            "criteria", JSONValue.obj(
+                "reply", .string("Just respond to the user in text."),
+                "act", .string("Invoke a tool / take an action."))))
+    private static let langQuestion: JSONValue = {
+        // Keys are the FULL language names — exactly the trained shape
+        // (engine.py LANG_QUESTION dict comprehension).
+        let langs = ["English", "Russian", "German", "French", "Spanish",
+                     "Italian", "Portuguese", "Chinese", "Japanese", "Korean"]
+        var pairs = [(key: String, value: JSONValue)]()
+        for name in langs {
+            pairs.append((key: name, value: .string("The request is written in \(name).")))
+        }
+        return JSONValue.obj("lang", JSONValue.obj(
+            "type", .string("choice"),
+            "instructions", .string("What is the primary language of the request in the state?"),
+            "criteria", .object(pairs)))
+    }()
+
+    /// engine.py decide() + _ask(): typed task → trained question → ONE
+    /// model pass → the raw engine result document (task/chain/choice/
+    /// confidence/acted/act_p/probs/latency_ms — NOT the question-API
+    /// answer shape; the laya_http bridge serves this document verbatim).
+    public func decideLegacy(task: String, state: JSONValue,
+                             options: JSONValue?,
+                             toolSlate: JSONValue, skillSlate: JSONValue) async throws -> JSONValue {
+        let q = try Self.questionFor(task: task, options: options,
+                                     toolSlate: toolSlate, skillSlate: skillSlate)
+        let qname = q.objectPairs?.first?.key ?? "q"
+        let qb = q.objectPairs?.first?.value ?? q
+        let out = try await decide(task: task, state: state, question: .object([(key: qname, value: qb)]))
+        var probs = [(key: String, value: JSONValue)]()
+        probs.reserveCapacity(out.probs.count)
+        for p in out.probs { probs.append((key: p.key, value: .double(p.value))) }
+        return JSONValue.obj(
+            "task", .string(out.task),
+            "chain", .string(out.chain),
+            "choice", .string(out.choice),
+            "confidence", .double(out.confidence),
+            "acted", .bool(out.acted),
+            "act_p", .double(out.actP),
+            "probs", .object(probs),
+            "latency_ms", .double(out.latencyMs))
+    }
 }
 
 @available(macOS 27.0, *)
@@ -454,12 +554,12 @@ extension NDArray {
         switch scalarType {
         case .float32:
             out = [Double](repeating: 0, count: count)
-            _ = view(as: Float.self).withUnsafePointer { p, _, _ in
+            view(as: Float.self).withUnsafePointer { p, _, _ in
                 for i in 0..<count { out[i] = Double(p[i]) }
             }
         case .float16:
             out = [Double](repeating: 0, count: count)
-            _ = view(as: UInt16.self).withUnsafePointer { p, _, _ in
+            view(as: UInt16.self).withUnsafePointer { p, _, _ in
                 for i in 0..<count {
                     out[i] = Double(Float16(bitPattern: p[i]))
                 }

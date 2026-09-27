@@ -47,6 +47,10 @@ public struct HTTPResponse: Sendable {
 /// Client disconnected mid-request — abandon without response (LayaStopped).
 public struct ClientDisconnected: Error {}
 
+public enum HTTPServerError: Error {
+    case invalidPort(UInt16)
+}
+
 public final class HTTPServer: @unchecked Sendable {
     public typealias Handler = @Sendable (HTTPRequest) async -> HTTPResponse
 
@@ -58,9 +62,13 @@ public final class HTTPServer: @unchecked Sendable {
         self.handler = handler
         let params = NWParameters.tcp
         // Loopback-only bind (the daemon's job per the Python module docs).
-        params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1",
-                                                           port: .init(rawValue: port)!)
-        listener = try NWListener(using: params, on: .init(rawValue: port)!)
+        // The port lives INSIDE requiredLocalEndpoint — passing it again via
+        // `on:` conflicts (NWListener throws EINVAL).
+        guard let p = NWEndpoint.Port(rawValue: port) else {
+            throw HTTPServerError.invalidPort(port)
+        }
+        params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: p)
+        listener = try NWListener(using: params)
     }
 
     public func start() {
@@ -91,7 +99,7 @@ public final class HTTPServer: @unchecked Sendable {
     private static func receive(_ conn: NWConnection, min: Int, max: Int) async throws -> Data {
         try await withCheckedThrowingContinuation { cont in
             conn.receive(minimumIncompleteLength: min, maximumLength: max) { data, _, isComplete, error in
-                if let error { cont.resume(throwing: ClientDisconnected()); return }
+                if error != nil { cont.resume(throwing: ClientDisconnected()); return }
                 if let data, !data.isEmpty { cont.resume(returning: data); return }
                 if isComplete { cont.resume(throwing: ClientDisconnected()); return }
                 cont.resume(returning: Data())
