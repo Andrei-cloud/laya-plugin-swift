@@ -89,8 +89,13 @@ public actor Engine {
     /// pinned unit, and warms it with one padded probe pass (the ~5 s cold
     /// cost is paid here, not on the first user request).
     public init(_ cfg: Config) async throws {
+        // standardizingPath resolves the ".." lexically: with only the
+        // .aimodel directory moved away (AOT ship-flow test), a raw
+        // "asset/../sidecar" path ENOENTs at the missing component even
+        // though the sidecar itself exists.
         let provPath = ((cfg.assetDir as NSString).appendingPathComponent("..") as NSString)
             .appendingPathComponent("combined_provenance.json")
+            .standardizingPath
         guard let data = FileManager.default.contents(atPath: provPath),
               let prov = JSONValue.parse(data) else {
             throw LoadError.missingProvenance(provPath)
@@ -169,10 +174,29 @@ public actor Engine {
         // start. .persistent survives storage-pressure purges; the entry is
         // still invalidated when the source asset changes or is deleted
         // (sourceAssetChangedOrDeleted), which is exactly our update story.
+        //
+        // LAYA_AOT_KEEP=1 — same persistent cache, but with NO purge
+        // conditions: the compiled delegate survives storage-pressure
+        // purges (the entry is still keyed to the asset's security
+        // bookmark, so a changed asset re-compiles). NOTE (measured, not
+        // assumed): deleting the downloaded .aimodel after the AOT compile
+        // does NOT work — cache.model(for:) resolves the bookmark first
+        // and misses when the file is gone (verified by hiding the asset:
+        // load failed). The ship flow is therefore: keep the (inert)
+        // source asset in a private app-owned directory; the cache saves
+        // the ~2.4 s recompile per launch, not the 900 MB.
+        let keep = Naming.envAlias("AOT_KEEP") == "1"
         let model: AIModel
         do {
-            model = try await AIModel.specialize(contentsOf: url, options: opts,
-                                                 cache: .default, cachePolicy: .persistent)
+            if keep, let cached = try AIModelCache.default.model(for: url, options: opts) {
+                model = cached
+            } else {
+                let policy: AIModelCache.Policy = keep
+                    ? AIModelCache.Policy(purgeConditions: [])   // survive asset deletion
+                    : .persistent
+                model = try await AIModel.specialize(contentsOf: url, options: opts,
+                                                     cache: .default, cachePolicy: policy)
+            }
         } catch { throw LoadError.loadFailed("\(error)") }
         guard let fname = model.functionNames.first,
               let f = try model.loadFunction(named: fname) else {

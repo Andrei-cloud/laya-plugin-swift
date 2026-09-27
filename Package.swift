@@ -43,6 +43,7 @@ let package = Package(
         .executableTarget(name: "laya-engine-probe", dependencies: ["LayaCore"]),
         .executableTarget(name: "laya-tokenizer-bench", dependencies: ["LayaCore"]),
         .executableTarget(name: "laya-tokenizer-compile", dependencies: ["LayaCore"]),
+        .executableTarget(name: "laya-aot-probe", dependencies: []),
         .testTarget(name: "LayaCoreTests", dependencies: ["LayaCore"]),
         .testTarget(name: "LayaParityTests", dependencies: ["LayaCore", "LayaHTTP", "LayaGRPC"]),
     ]
