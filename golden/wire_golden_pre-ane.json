@@ -15,8 +15,8 @@
    "ft_cmp2",
    "ft_rrk3"
   ],
-  "calls": 17,
-  "mean_latency_ms": 24.29
+  "calls": 10,
+  "mean_latency_ms": 26.48
  },
  "models": {
   "object": "list",
@@ -63,23 +63,23 @@
     "answers": {
      "disposition": {
       "type": "choice",
-      "choice": "allow",
+      "choice": "ask_user",
       "probabilities": {
-       "allow": 0.4941988398,
-       "ask_user": 0.4851970394,
-       "block": 0.0206041208
+       "allow": 0.4723,
+       "ask_user": 0.5037,
+       "block": 0.024
       },
-      "confidence": 0.4941988398
+      "confidence": 0.5037
      }
     },
     "model": "laya-r15",
     "usage": {
      "requests": 1,
      "chars_in": 33,
-     "chars_out": 173
+     "chars_out": 151
     }
    },
-   "client_ms": 54.4
+   "client_ms": 393.9
   },
   {
    "name": "guardrail-benign",
@@ -103,21 +103,21 @@
       "type": "choice",
       "choice": "ask_user",
       "probabilities": {
-       "allow": 0.0112943528,
-       "ask_user": 0.863868066,
-       "block": 0.1248375812
+       "allow": 0.0116,
+       "ask_user": 0.8618,
+       "block": 0.1266
       },
-      "confidence": 0.863868066
+      "confidence": 0.8618
      }
     },
     "model": "laya-r15",
     "usage": {
      "requests": 1,
      "chars_in": 34,
-     "chars_out": 174
+     "chars_out": 152
     }
    },
-   "client_ms": 20.3
+   "client_ms": 24.6
   },
   {
    "name": "triage-score-kind-noul",
@@ -160,43 +160,43 @@
     "answers": {
      "urgency": {
       "type": "score",
-      "score": 0.6160303817,
+      "score": 0.6152615262,
       "probabilities": {
-       "0": 0.7510493704,
-       "1": 0.0767539476,
-       "2": 0.0351788927,
-       "3": 0.0791525085,
-       "4": 0.0578652808
+       "0": 0.75147514748,
+       "1": 0.07660766078,
+       "2": 0.03510351038,
+       "3": 0.07880788077999999,
+       "4": 0.058005800579999996
       },
       "spread_reported": true,
-      "confidence": 0.7510493704
+      "confidence": 0.75147514748
      },
      "kind": {
       "type": "choice",
       "choice": "info",
       "probabilities": {
-       "customer-problem": 0.06677329068333333,
-       "question": 0.030587764883333333,
-       "info": 0.5417832866833333,
-       "promotion": 0.014394242283333332,
-       "sales": 0.017992802883333332,
-       "noise": 0.3284686125833333
+       "customer-problem": 0.0635,
+       "question": 0.0299,
+       "info": 0.5567,
+       "promotion": 0.0137,
+       "sales": 0.0172,
+       "noise": 0.319
       },
-      "confidence": 0.5417832866833333
+      "confidence": 0.5567
      },
      "deadline": {
       "type": "noul",
-      "noul": 0.3381
+      "noul": 0.3298
      }
     },
     "model": "laya-r15",
     "usage": {
      "requests": 1,
      "chars_in": 160,
-     "chars_out": 563
+     "chars_out": 490
     }
    },
-   "client_ms": 61.0
+   "client_ms": 79.5
   },
   {
    "name": "lang-route-choice",
@@ -225,25 +225,25 @@
       "type": "choice",
       "choice": "ja",
       "probabilities": {
-       "ar": 0.2423515297,
-       "en": 0.0125974805,
-       "es": 0.024995001,
-       "hi": 0.2095580884,
-       "ja": 0.3170365927,
-       "ru": 0.0909818036,
-       "zh": 0.1024795041
+       "ar": 0.2346,
+       "en": 0.0126,
+       "es": 0.0251,
+       "hi": 0.2105,
+       "ja": 0.3211,
+       "ru": 0.0931,
+       "zh": 0.103
       },
-      "confidence": 0.3170365927
+      "confidence": 0.3211
      }
     },
     "model": "laya-r15",
     "usage": {
      "requests": 1,
      "chars_in": 57,
-     "chars_out": 230
+     "chars_out": 182
     }
    },
-   "client_ms": 20.4
+   "client_ms": 26.5
   },
   {
    "name": "rerank-noul-pair",
@@ -266,11 +266,11 @@
     "answers": {
      "rel_0": {
       "type": "noul",
-      "noul": 0.4707
+      "noul": 0.4706
      },
      "inj_0": {
       "type": "noul",
-      "noul": 0.4524
+      "noul": 0.4523
      }
     },
     "model": "laya-r15",
@@ -280,7 +280,7 @@
      "chars_out": 86
     }
    },
-   "client_ms": 41.2
+   "client_ms": 44.9
   },
   {
    "name": "base-noul-foreign",
@@ -297,7 +297,7 @@
     "answers": {
      "enough": {
       "type": "noul",
-      "noul": 0.9429
+      "noul": 0.9432
      }
     },
     "model": "laya-r15",
@@ -307,7 +307,7 @@
      "chars_out": 44
     }
    },
-   "client_ms": 20.4
+   "client_ms": 26.1
   },
   {
    "name": "supervise-noul-choice",
@@ -337,29 +337,29 @@
     "answers": {
      "done": {
       "type": "noul",
-      "noul": 0.1538
+      "noul": 0.1539
      },
      "action": {
       "type": "choice",
       "choice": "nudge",
       "probabilities": {
-       "keep_waiting": 0.0685137027,
-       "answer_question": 0.0183036607,
-       "nudge": 0.7350470094,
-       "escalate": 0.0615123025,
-       "collect": 0.1166233247
+       "keep_waiting": 0.0695,
+       "answer_question": 0.0177,
+       "nudge": 0.7416,
+       "escalate": 0.0611,
+       "collect": 0.1101
       },
-      "confidence": 0.7350470094
+      "confidence": 0.7416
      }
     },
     "model": "laya-r15",
     "usage": {
      "requests": 1,
      "chars_in": 113,
-     "chars_out": 275
+     "chars_out": 239
     }
    },
-   "client_ms": 40.2
+   "client_ms": 46.2
   },
   {
    "name": "mail-sort",
@@ -393,11 +393,11 @@
       "probabilities": {
        "needs_reply": 0.0,
        "updates": 0.0,
-       "promotional": 0.1644328866,
+       "promotional": 0.2018,
        "sales": 0.0,
-       "spam": 0.8355671134
+       "spam": 0.7982
       },
-      "confidence": 0.8355671134
+      "confidence": 0.7982
      },
      "personal": {
       "type": "noul",
@@ -408,10 +408,10 @@
     "usage": {
      "requests": 1,
      "chars_in": 119,
-     "chars_out": 237
+     "chars_out": 219
     }
    },
-   "client_ms": 40.4
+   "client_ms": 45.6
   },
   {
    "name": "compact-choice",
@@ -436,21 +436,21 @@
       "type": "choice",
       "choice": "keep",
       "probabilities": {
-       "keep": 0.502849715,
-       "summarize": 0.1472852715,
-       "drop": 0.3498650135
+       "keep": 0.5014,
+       "summarize": 0.1471,
+       "drop": 0.3515
       },
-      "confidence": 0.502849715
+      "confidence": 0.5014
      }
     },
     "model": "laya-r15",
     "usage": {
      "requests": 1,
      "chars_in": 126,
-     "chars_out": 161
+     "chars_out": 139
     }
    },
-   "client_ms": 21.6
+   "client_ms": 23.7
   },
   {
    "name": "choose-action",
@@ -476,22 +476,22 @@
       "type": "choice",
       "choice": "a2",
       "probabilities": {
-       "a1": 0.2042,
-       "a2": 0.7271,
-       "reobserve": 0.0566,
-       "abstain": 0.0121
+       "a1": 0.203,
+       "a2": 0.7283,
+       "reobserve": 0.0567,
+       "abstain": 0.012
       },
-      "confidence": 0.7271
+      "confidence": 0.7283
      }
     },
     "model": "laya-r15",
     "usage": {
      "requests": 1,
      "chars_in": 98,
-     "chars_out": 160
+     "chars_out": 158
     }
    },
-   "client_ms": 21.8
+   "client_ms": 22.9
   }
  ]
 }

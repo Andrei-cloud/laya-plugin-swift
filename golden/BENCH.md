@@ -160,3 +160,40 @@ the ANE compiler rejects the asset's f16↔f32 boundary cast ops
 ANECCompile failure — identical on the Python daemon, same asset). Full
 ANE residency needs a BC1S-shaped re-export (host-precomputed masks,
 pure-f16 tensors) in ~/Developer/ai/laya — asset-side work, not Swift.
+
+## ANE-pure asset (r37 swap) — 2026-09-27, SUPERSEDES the NE note above
+
+`laya-combined-f16.aimodel` re-exported ANE-pure (assetVersion 2.0,
+main.mlirb sha256 d94bfcf0…, HF AndyInQtr/laya-decision-plugin; local
+fp32-island asset archived as laya-combined-f16-pre-ane-dynamic.aimodel.bak).
+Patches per provenance: PRESERVE_DTYPE head chains, RoPE precomputed f16
+cos/sin tables, dtype-preserving apply_rotary_pos_emb — zero fp32
+islands after decomposition.
+
+| metric | old asset (gpu) | old asset (ne) | **new asset (ne)** |
+|--------|----------------:|---------------:|-------------------:|
+| engine ready (warm=1) | ~6.1 s | ~6.9 s | **1.2 s** |
+| ANE compile failures/run | 0 (GPU) | 1 + boundary-op spam | **0, zero warnings** |
+| warm pass L=1024 | 19.5-22 ms | (fallback ops) | **19.1-19.2 ms** |
+| cold first pass | ~64 ms | ~76 ms | 75.7 ms |
+| wire goldens | 15/15 | 15/15 (fallback) | **15/15** |
+
+Runtime acceptance (provenance, python-side): unit=ne, argmax_agree
+100% all buckets, mean KL max-bucket 0.00054, nonfinite 0 — PASS.
+Swift engine independently: 15/15 wire goldens on `--unit=ne`, zero
+`ANE I/O op` warnings in the probe log.
+
+NUMERIC TRUTH CHANGED: the re-export shifts logits slightly (fp16 RoPE
+tables). One golden case flipped argmax on BOTH engines identically
+(`rm -rf /tmp/cache`: ask_user 0.5037 → allow 0.4942; the safety canary
+`rm -rf /` stays ask_user 0.7319 on python AND swift). Wire goldens
+regenerated from the python-on-new-asset oracle
+(`LAYA_GOLDEN_DAEMON=… make_golden.py`); old set kept as
+`wire_golden_pre-ane.json`. Rule: goldens belong to an asset —
+regenerate on every re-export, never mix.
+
+Swift-side fix required by the new asset: outputs are true Float16
+tensors and `NDArray.view(as:)` validates the element type —
+`view(as: UInt16.self)` on an f16 tensor TRAPS
+("Type UInt16 does not match scalar type Optional(Float16)").
+`toFloat64Array` now uses `view(as: Float16.self)` directly.

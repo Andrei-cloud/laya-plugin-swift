@@ -598,10 +598,14 @@ extension NDArray {
             }
         case .float16:
             out = [Double](repeating: 0, count: count)
-            view(as: UInt16.self).withUnsafePointer { p, _, _ in
-                for i in 0..<count {
-                    out[i] = Double(Float16(bitPattern: p[i]))
-                }
+            // The runtime validates the view element against the
+            // descriptor's scalar type: view(as: UInt16.self) on a
+            // float16 tensor TRAPS ("Type UInt16 does not match scalar
+            // type Optional(Float16)") — first hit when the ANE-clean
+            // asset (assetVersion 2.0) switched outputs f32 -> f16.
+            // Float16 itself is BitwiseCopyable; use it directly.
+            view(as: Float16.self).withUnsafePointer { p, _, _ in
+                for i in 0..<count { out[i] = Double(p[i]) }
             }
         default:
             break

@@ -25,7 +25,10 @@ SW = "./.build/release/laya"
 CORE = {
     "LAYA_ASSETS": os.path.expanduser("~/Developer/ai/laya/release"),
     "LAYA_SOURCE": os.path.expanduser("~/Developer/ai/laya/models/source"),
-    "LAYA_UNIT": "gpu",
+    # ANE-pure asset (assetVersion 2.0, sha d94bfcf0…): both sides ride
+    # the Neural Engine — the strongest end-to-end proof the rails agree
+    # on the shipped configuration. (Engine probe: 15/15 NE wire goldens.)
+    "LAYA_UNIT": os.environ.get("LAYA_GATE_UNIT", "ne"),
 }
 
 # Covers every rail: secret-shaped no-send, promotion ignore,

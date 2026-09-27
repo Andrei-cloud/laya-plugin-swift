@@ -29,7 +29,10 @@ from laya_port.sequence import build_sequence, render_options  # noqa: E402
 from transformers import AutoTokenizer  # noqa: E402
 
 SRC = "/Users/andrei/Developer/ai/laya/models/source"
-DAEMON = "http://127.0.0.1:11270"
+DAEMON = os.environ.get("LAYA_GOLDEN_DAEMON", "http://127.0.0.1:11270")
+# The oracle daemon: python + the CURRENT asset. Regenerate the
+# wire goldens whenever the .aimodel is re-exported (new asset =
+# new numeric truth; old goldens gate the old asset only).
 
 tok = AutoTokenizer.from_pretrained(os.path.join(SRC, "tokenizer"))
 
