@@ -81,8 +81,9 @@ extension LayaCLI {
         /// looks healthy while the in-process inference never loaded
         /// (found by the rows differential, 2026-09-27).
         static func resolvePaths() -> (assets: String, source: String) {
-            var assets = Naming.envAlias("ASSETS")
-                ?? "/Users/andrei/Developer/ai/laya/models/coreai/laya-combined-f16.aimodel"
+            let (assets0, source0) = LayaPaths.resolve()  // env -> daemon.json -> ~/.laya/model
+            var assets = assets0
+            _ = source0  // the leaf-name probing below keeps engine.py spelling rules
             // NOTE: a .aimodel bundle is ITSELF a directory, so "path is a
             // directory" does not mean "dir containing the bundle". Distinguish
             // by the bundle leaf name INSIDE the path (Python convention =

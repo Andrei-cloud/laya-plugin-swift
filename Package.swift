@@ -1,17 +1,22 @@
 // swift-tools-version:6.3
-// Laya decision plugin — native Swift port of laya-plugin (Python).
+// Laya decision plugin — native Swift. One fine-tuned Apple Core AI
+// model (11 chains in one .aimodel) answering guardrail / triage /
+// mail_sort / supervise / choose / compact / rerank locally, on the
+// Neural Engine. Apache-2.0.
 //
-// Layering (mirrors the Python package):
-//   LayaCore   — pure Foundation: JSON, naming/aliases, constants, tokenizer,
-//                sequence building, wire ops, security validation, decision
-//                log, Core AI engine, use-case rails, remote engine client.
-//   LayaGRPC   — generated protobuf/gRPC stubs (Scripts/protogen.sh).
-//   LayaHTTP   — loopback HTTP/1.1 surface on Network.framework (no deps).
-//   layad      — warm daemon: Engine + /health + /v1 question API + gRPC.
-//   laya       — dual-named CLI (jev is the same binary via symlink):
-//                gRPC → HTTP backend, or --local Core AI inference in-process.
-//   layacoreai-probe — dev probe: one Core AI pass, logits dumped for parity.
-//   laya-tokenizer-compile — compiles tokenizer.json → tokenizer.bin (fast load).
+// Targets:
+//   LayaCore    — pure Foundation: JSON, naming/aliases, constants,
+//                 tokenizer, sequence building, wire ops, security
+//                 validation, decision log, Core AI engine, use-case
+//                 rails, remote-engine client, version + asset paths.
+//   LayaGRPC    — generated protobuf/gRPC stubs (Protos/laya.proto).
+//   LayaHTTP    — loopback HTTP/1.1 surface on Network.framework (no deps).
+//   layad       — warm daemon: Engine + /health + /v1 question API + gRPC.
+//   laya        — dual-named CLI (jev is the same binary via symlink):
+//                 gRPC → HTTP backend, or --local Core AI inference in-process.
+//   LayaMenuBar — macOS menu bar agent: status dot, live /health stats,
+//                 launchd start/stop, settings editor; headless modes
+//                 (--init-config / --render-plist / --status / --version).
 import PackageDescription
 
 let package = Package(
@@ -34,21 +39,10 @@ let package = Package(
             .product(name: "GRPC", package: "grpc-swift"),
         ]),
         .executableTarget(name: "laya", dependencies: [
-            "LayaCore", "LayaGRPC",
-            "LayaHTTP",
+            "LayaCore", "LayaGRPC", "LayaHTTP",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
             .product(name: "GRPC", package: "grpc-swift"),
         ]),
-        .executableTarget(name: "layacoreai-probe", dependencies: ["LayaCore"]),
-        .executableTarget(name: "laya-engine-probe", dependencies: ["LayaCore"]),
-        .executableTarget(name: "laya-tokenizer-bench", dependencies: ["LayaCore"]),
-        .executableTarget(name: "laya-tokenizer-compile", dependencies: ["LayaCore"]),
-        .executableTarget(name: "laya-aot-probe", dependencies: []),
-        // macOS menu bar companion: status dot + live /health stats +
-        // launchd start/stop + settings editor (headless modes for
-        // install.sh: --init-config, --render-plist, --status).
         .executableTarget(name: "LayaMenuBar", dependencies: ["LayaCore"]),
-        .testTarget(name: "LayaCoreTests", dependencies: ["LayaCore"]),
-        .testTarget(name: "LayaParityTests", dependencies: ["LayaCore", "LayaHTTP", "LayaGRPC"]),
     ]
 )

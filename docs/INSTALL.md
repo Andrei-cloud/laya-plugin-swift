@@ -89,5 +89,4 @@ git pull && ./Scripts/install-macos.sh          # upgrade (config preserved)
 Troubleshooting: daemon crash-looping → check
 `~/Library/Logs/laya/daemon.log`; port busy → `lsof -nP -iTCP:11270
 -sTCP:LISTEN` (a legacy Python daemon? `launchctl bootout
-gui/$(id -u)/com.laya.decisiond`). Asset version changed? The wire
-goldens belong to an asset — regenerate them (see `golden/BENCH.md`).
+gui/$(id -u)/com.laya.decisiond`).

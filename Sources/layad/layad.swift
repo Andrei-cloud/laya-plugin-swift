@@ -36,13 +36,10 @@ struct Layad {
 
     @available(macOS 27.0, *)
     static func run() async {
-        let assets = Naming.envAlias("ASSETS")
-            ?? "/Users/andrei/Developer/ai/laya/models/coreai/laya-combined-f16.aimodel"
-        // Python engine.py default: LAYA_SOURCE or <assets>/configs; the
-        // dev layout puts the tokenizer at <models>/source — try configs
-        // first, fall back to the sibling source dir.
-        var source = Naming.envAlias("SOURCE")
-            ?? (assets as NSString).appendingPathComponent("configs")
+        // No machine-specific defaults in source: env ->
+        // ~/.config/laya/daemon.json -> ~/.laya/model (see LayaPaths).
+        let assets = LayaPaths.resolve().assets
+        var source = LayaPaths.resolve().source
         if !FileManager.default.fileExists(atPath: (source as NSString)
             .appendingPathComponent("tokenizer/tokenizer.json")) {
             // dev layout: <models>/coreai/<asset>, tokenizer at <models>/source

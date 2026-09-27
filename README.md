@@ -22,10 +22,11 @@ Model repo: [`AndyInQtr/laya-decision-plugin`](https://huggingface.co/AndyInQtr/
   `NDArray.View` spans, AOT persistent hardware cache
   (`AIModelCache`), pad-to-Lmax — engine ready **1.2 s**, warm pass
   **19.1 ms on ANE**.
-- Tokenizer: byte-identical to the Python/Rust tokenizer on the full
-  4,021-string golden corpus; 1.46× faster overall (2.36× short-text).
-- Tests: 24 unit + wire-contract goldens from the live Python daemon
-  (15/15 engine, 20/20 transport, 10/10 + 10/10 rows differential).
+- Tokenizer: byte-identical to the Python/Rust tokenizer on a
+  4,021-string corpus; 1.46× faster overall (2.36× short-text).
+- Validated against the live Python daemon: 15/15 engine wire answers,
+  20/20 HTTP+gRPC transport parity, 10/10 + 10/10 use-case-row
+  differentials (Python CLI vs Swift CLI, same stdin).
 
 ## Install (human, ~2 minutes)
 
@@ -100,23 +101,24 @@ agent's skills directory; nothing self-installs.
 
 ```
 Sources/LayaCore/      tokenizer (byte-parity), Engine (CoreAI actor),
-                       wire ops/validation, use-case rails, version
+                       wire ops/validation, use-case rails, version,
+                       asset-path resolution
 Sources/LayaHTTP/      loopback HTTP/1.1 server + question-API router
-Sources/LayaGRPC/      generated laya.v1 stubs (Protos/laya.proto)
-Sources/layad/         daemon          Sources/laya/       CLI (+RemoteEngine)
-Sources/LayaMenuBar/   menu bar agent  Tests/  parity + wire + differential
-golden/                goldens (wire goldens belong to an asset; regenerate
-                       on every re-export — see BENCH.md)
-Scripts/               install-macos.sh · agent_install.sh ·
-                       uninstall-macos.sh · diff_rows.py (differential gate)
+Sources/LayaGRPC/      generated laya.v1 stubs
+Sources/layad/         daemon
+Sources/laya/          CLI (+ RemoteEngine degraded rail)
+Sources/LayaMenuBar/   menu bar agent
+protos/laya.proto      the gRPC wire protocol (single source)
+Scripts/               install-macos.sh · agent_install.sh (idempotent,
+                       for agents) · uninstall-macos.sh
 docs/                  INSTALL.md · INSTALL-AGENTS.md · macos-native.md
-OPTIMIZATION.md        the full optimization program (T/S/E/U/J findings)
+skills/                harness SKILL.md set (guard, decisions, routing…)
 ```
 
-## Performance & parity
+## Performance
 
-`golden/BENCH.md` carries the honest numbers: Swift vs Python tokenizer
-(cold/warm separated, cache-bypassed), GPU/ANE pass times, AOT cache
-gains, and the r37 ANE-pure asset swap. Parity gates are in `Tests/`
-and `Scripts/diff_rows.py` (Python CLI vs Swift CLI, same stdin, both
-engines asserted to actually load).
+ANE-pure asset: engine ready 1.2 s, warm decision pass 19.1 ms on the
+Neural Engine (L=1024), cold first pass ~76 ms; the AOT persistent
+hardware cache removes per-process re-specialization. The Swift
+tokenizer is 1.46× the Python/Rust-core baseline overall (2.36× on
+short texts), measured cold and warm separately.
