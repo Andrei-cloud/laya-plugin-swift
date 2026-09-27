@@ -44,6 +44,10 @@ let package = Package(
         .executableTarget(name: "laya-tokenizer-bench", dependencies: ["LayaCore"]),
         .executableTarget(name: "laya-tokenizer-compile", dependencies: ["LayaCore"]),
         .executableTarget(name: "laya-aot-probe", dependencies: []),
+        // macOS menu bar companion: status dot + live /health stats +
+        // launchd start/stop + settings editor (headless modes for
+        // install.sh: --init-config, --render-plist, --status).
+        .executableTarget(name: "LayaMenuBar", dependencies: []),
         .testTarget(name: "LayaCoreTests", dependencies: ["LayaCore"]),
         .testTarget(name: "LayaParityTests", dependencies: ["LayaCore", "LayaHTTP", "LayaGRPC"]),
     ]
