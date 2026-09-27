@@ -16,7 +16,7 @@ import PackageDescription
 
 let package = Package(
     name: "laya-plugin-swift",
-    platforms: [.macOS(.v27)],
+    platforms: [.macOS(.v26)],
     dependencies: [
         .package(url: "https://github.com/grpc/grpc-swift.git", exact: "1.27.6"),
         .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.38.1"),
