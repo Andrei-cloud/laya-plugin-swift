@@ -72,10 +72,12 @@ fall back to the warm daemon automatically.
 
 ## Harness registration
 
-- **Hermes MCP (daemon, recommended):** `printf '\n' | hermes mcp add laya
-  --url http://127.0.0.1:11270/mcp` — the Swift daemon serves MCP
+- **Hermes MCP (daemon, recommended):** `printf 'n\n\n' | hermes mcp add
+  laya --url http://127.0.0.1:11270/mcp` — the Swift daemon serves MCP
   streamable-HTTP natively since 0.3.0 (stateless; `laya_ask` answers are
   byte-identical to POST /v1/laya — gated by `Scripts/diff_mcp.py`).
+  The `n` answers the auth prompt (no token set); a bare `\n` gets eaten
+  by it and the add cancels.
 - **Hermes MCP (stdio, no daemon):** `printf '\n' | hermes mcp add laya
   --command ~/.local/bin/laya --args mcp` — the laya binary IS the MCP
   server (proxies to the daemon; `--args mcp --local` loads CoreAI

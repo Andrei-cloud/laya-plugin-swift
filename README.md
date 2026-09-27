@@ -97,7 +97,8 @@ mounts, one dispatch — answers are byte-identical across them
 
 ```sh
 # streamable-HTTP on the warm daemon (recommended — one model, all sessions):
-printf '\n' | hermes mcp add laya --url http://127.0.0.1:11270/mcp
+printf 'n\n\n' | hermes mcp add laya --url http://127.0.0.1:11270/mcp
+# (the n answers the auth prompt — no token set; blank would cancel)
 
 # stdio, zero dependencies (the laya binary IS the server):
 printf '\n' | hermes mcp add laya --command ~/.local/bin/laya --args mcp
