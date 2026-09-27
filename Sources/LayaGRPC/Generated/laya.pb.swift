@@ -32,100 +32,100 @@ fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobu
   typealias Version = _2
 }
 
-nonisolated struct Laya_V1_Empty: Sendable {
+public nonisolated struct Laya_V1_Empty: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-nonisolated struct Laya_V1_HealthReply: Sendable {
+public nonisolated struct Laya_V1_HealthReply: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   /// Exact JSON document from GET /health of the HTTP surface.
-  var json: Data = Data()
+  public var json: Data = Data()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-nonisolated struct Laya_V1_ModelsReply: Sendable {
+public nonisolated struct Laya_V1_ModelsReply: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var json: Data = Data()
+  public var json: Data = Data()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-nonisolated struct Laya_V1_AskRequest: Sendable {
+public nonisolated struct Laya_V1_AskRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   /// Full question-API request envelope: {state, model?, questions:{name:q}}
-  var json: Data = Data()
+  public var json: Data = Data()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-nonisolated struct Laya_V1_AskReply: Sendable {
+public nonisolated struct Laya_V1_AskReply: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   /// Full question-API response envelope, or the refusal body.
-  var json: Data = Data()
+  public var json: Data = Data()
 
   /// mirrors the HTTP status the same request gets
-  var httpStatus: Int32 = 0
+  public var httpStatus: Int32 = 0
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-nonisolated struct Laya_V1_EngineResultReply: Sendable {
+public nonisolated struct Laya_V1_EngineResultReply: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   /// Raw engine result {task, chain, choice, confidence, acted, act_p,
   /// probs, latency_ms} — what RemoteEngine.question() reshapes into.
-  var json: Data = Data()
+  public var json: Data = Data()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
-nonisolated struct Laya_V1_EngineQuestion: Sendable {
+public nonisolated struct Laya_V1_EngineQuestion: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  var name: String = String()
+  public var name: String = String()
 
   /// {type, instructions, criteria?, route_task?}
-  var questionJson: Data = Data()
+  public var questionJson: Data = Data()
 
   /// state: string | object | array as JSON
-  var stateJson: Data = Data()
+  public var stateJson: Data = Data()
 
-  var unknownFields = SwiftProtobuf.UnknownStorage()
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  init() {}
+  public init() {}
 }
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -133,29 +133,29 @@ nonisolated struct Laya_V1_EngineQuestion: Sendable {
 fileprivate nonisolated let _protobuf_package = "laya.v1"
 
 nonisolated extension Laya_V1_Empty: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".Empty"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+  public static let protoMessageName: String = _protobuf_package + ".Empty"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     // Load everything into unknown fields
     while try decoder.nextFieldNumber() != nil {}
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Laya_V1_Empty, rhs: Laya_V1_Empty) -> Bool {
+  public static func ==(lhs: Laya_V1_Empty, rhs: Laya_V1_Empty) -> Bool {
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
 nonisolated extension Laya_V1_HealthReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".HealthReply"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0")
+  public static let protoMessageName: String = _protobuf_package + ".HealthReply"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -167,14 +167,14 @@ nonisolated extension Laya_V1_HealthReply: SwiftProtobuf.Message, SwiftProtobuf.
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.json.isEmpty {
       try visitor.visitSingularBytesField(value: self.json, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Laya_V1_HealthReply, rhs: Laya_V1_HealthReply) -> Bool {
+  public static func ==(lhs: Laya_V1_HealthReply, rhs: Laya_V1_HealthReply) -> Bool {
     if lhs.json != rhs.json {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -182,10 +182,10 @@ nonisolated extension Laya_V1_HealthReply: SwiftProtobuf.Message, SwiftProtobuf.
 }
 
 nonisolated extension Laya_V1_ModelsReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".ModelsReply"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0")
+  public static let protoMessageName: String = _protobuf_package + ".ModelsReply"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -197,14 +197,14 @@ nonisolated extension Laya_V1_ModelsReply: SwiftProtobuf.Message, SwiftProtobuf.
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.json.isEmpty {
       try visitor.visitSingularBytesField(value: self.json, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Laya_V1_ModelsReply, rhs: Laya_V1_ModelsReply) -> Bool {
+  public static func ==(lhs: Laya_V1_ModelsReply, rhs: Laya_V1_ModelsReply) -> Bool {
     if lhs.json != rhs.json {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -212,10 +212,10 @@ nonisolated extension Laya_V1_ModelsReply: SwiftProtobuf.Message, SwiftProtobuf.
 }
 
 nonisolated extension Laya_V1_AskRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".AskRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0")
+  public static let protoMessageName: String = _protobuf_package + ".AskRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -227,14 +227,14 @@ nonisolated extension Laya_V1_AskRequest: SwiftProtobuf.Message, SwiftProtobuf._
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.json.isEmpty {
       try visitor.visitSingularBytesField(value: self.json, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Laya_V1_AskRequest, rhs: Laya_V1_AskRequest) -> Bool {
+  public static func ==(lhs: Laya_V1_AskRequest, rhs: Laya_V1_AskRequest) -> Bool {
     if lhs.json != rhs.json {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -242,10 +242,10 @@ nonisolated extension Laya_V1_AskRequest: SwiftProtobuf.Message, SwiftProtobuf._
 }
 
 nonisolated extension Laya_V1_AskReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".AskReply"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0\u{3}http_status\0")
+  public static let protoMessageName: String = _protobuf_package + ".AskReply"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0\u{3}http_status\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -258,7 +258,7 @@ nonisolated extension Laya_V1_AskReply: SwiftProtobuf.Message, SwiftProtobuf._Me
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.json.isEmpty {
       try visitor.visitSingularBytesField(value: self.json, fieldNumber: 1)
     }
@@ -268,7 +268,7 @@ nonisolated extension Laya_V1_AskReply: SwiftProtobuf.Message, SwiftProtobuf._Me
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Laya_V1_AskReply, rhs: Laya_V1_AskReply) -> Bool {
+  public static func ==(lhs: Laya_V1_AskReply, rhs: Laya_V1_AskReply) -> Bool {
     if lhs.json != rhs.json {return false}
     if lhs.httpStatus != rhs.httpStatus {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
@@ -277,10 +277,10 @@ nonisolated extension Laya_V1_AskReply: SwiftProtobuf.Message, SwiftProtobuf._Me
 }
 
 nonisolated extension Laya_V1_EngineResultReply: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".EngineResultReply"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0")
+  public static let protoMessageName: String = _protobuf_package + ".EngineResultReply"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}json\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -292,14 +292,14 @@ nonisolated extension Laya_V1_EngineResultReply: SwiftProtobuf.Message, SwiftPro
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.json.isEmpty {
       try visitor.visitSingularBytesField(value: self.json, fieldNumber: 1)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Laya_V1_EngineResultReply, rhs: Laya_V1_EngineResultReply) -> Bool {
+  public static func ==(lhs: Laya_V1_EngineResultReply, rhs: Laya_V1_EngineResultReply) -> Bool {
     if lhs.json != rhs.json {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -307,10 +307,10 @@ nonisolated extension Laya_V1_EngineResultReply: SwiftProtobuf.Message, SwiftPro
 }
 
 nonisolated extension Laya_V1_EngineQuestion: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  static let protoMessageName: String = _protobuf_package + ".EngineQuestion"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{3}question_json\0\u{3}state_json\0")
+  public static let protoMessageName: String = _protobuf_package + ".EngineQuestion"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{3}question_json\0\u{3}state_json\0")
 
-  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
       // The use of inline closures is to circumvent an issue where the compiler
       // allocates stack space for every case branch when no optimizations are
@@ -324,7 +324,7 @@ nonisolated extension Laya_V1_EngineQuestion: SwiftProtobuf.Message, SwiftProtob
     }
   }
 
-  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.name.isEmpty {
       try visitor.visitSingularStringField(value: self.name, fieldNumber: 1)
     }
@@ -337,7 +337,7 @@ nonisolated extension Laya_V1_EngineQuestion: SwiftProtobuf.Message, SwiftProtob
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  static func ==(lhs: Laya_V1_EngineQuestion, rhs: Laya_V1_EngineQuestion) -> Bool {
+  public static func ==(lhs: Laya_V1_EngineQuestion, rhs: Laya_V1_EngineQuestion) -> Bool {
     if lhs.name != rhs.name {return false}
     if lhs.questionJson != rhs.questionJson {return false}
     if lhs.stateJson != rhs.stateJson {return false}

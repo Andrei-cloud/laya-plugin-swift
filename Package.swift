@@ -1,4 +1,4 @@
-// swift-tools-version:6.0
+// swift-tools-version:6.2
 // Laya decision plugin — native Swift port of laya-plugin (Python).
 //
 // Layering (mirrors the Python package):
@@ -19,13 +19,14 @@ let package = Package(
     platforms: [.macOS(.v26)],
     dependencies: [
         .package(url: "https://github.com/grpc/grpc-swift.git", exact: "1.27.6"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.38.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.5.0"),
     ],
     targets: [
         .target(name: "LayaCore"),
         .target(name: "LayaGRPC", dependencies: [
             .product(name: "GRPC", package: "grpc-swift"),
-            .product(name: "SwiftProtobuf", package: "grpc-swift"),
+            .product(name: "SwiftProtobuf", package: "swift-protobuf"),
         ]),
         .target(name: "LayaHTTP", dependencies: ["LayaCore"]),
         .executableTarget(name: "layad", dependencies: [
@@ -39,6 +40,7 @@ let package = Package(
             .product(name: "GRPC", package: "grpc-swift"),
         ]),
         .executableTarget(name: "layacoreai-probe", dependencies: ["LayaCore"]),
+        .executableTarget(name: "laya-tokenizer-bench", dependencies: ["LayaCore"]),
         .executableTarget(name: "laya-tokenizer-compile", dependencies: ["LayaCore"]),
         .testTarget(name: "LayaCoreTests", dependencies: ["LayaCore"]),
         .testTarget(name: "LayaParityTests", dependencies: ["LayaCore", "LayaHTTP", "LayaGRPC"]),

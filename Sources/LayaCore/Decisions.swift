@@ -9,7 +9,7 @@ import Foundation
 /// breaks a decision path (fail open, counted in logFailures for doctor).
 enum Decisions {
     private static let lock = NSLock()
-    private static var failures: [(path: String, error: String)] = []
+    nonisolated(unsafe) private static var failures: [(path: String, error: String)] = []
 
     static var logKinds: Set<String> { K.logKinds }
 
@@ -84,7 +84,7 @@ enum Decisions {
         let line = JSONValue.serialize(.object(rec), sortKeys: true) + "\n"
         var ok = true
         lock.lock()
-        for path in targets() {
+        for path in [targets().0, targets().1] {
             do { try writeLine(path, line) }
             catch {
                 failures.append((path: path.path, error: "\(type(of: error)): \(error)"))

@@ -14,6 +14,6 @@ protoc \
   --plugin=protoc-gen-swift="$GRPC_SWIFT/.build/release/protoc-gen-swift" \
   --proto_path="$HERE/Protos" \
   --grpc-swift_out=Visibility=Public,Client=true,Server=true:"$GEN" \
-  --swift_out="$GEN" \
+  --swift_out=Visibility=Public:"$GEN" \
   "$HERE/Protos/laya.proto"
 echo "generated:"; ls -la "$GEN"

@@ -8,6 +8,25 @@ import Foundation
 /// sort_keys where the Python side sorts) is required for byte-identical
 /// decision-log lines and stable `chars_out` usage counts.
 indirect enum JSONValue: Equatable, Sendable {
+    /// Hand-written equality (synthesis is impossible: the object payload is
+    /// an array of labeled tuples, which never conform to Equatable).
+    /// Double compares with plain ==, matching Python list-comparison
+    /// semantics on parsed JSON.
+    static func == (lhs: JSONValue, rhs: JSONValue) -> Bool {
+        switch (lhs, rhs) {
+        case (.null, .null): return true
+        case let (.bool(a), .bool(b)): return a == b
+        case let (.int(a), .int(b)): return a == b
+        case let (.double(a), .double(b)): return a == b
+        case let (.string(a), .string(b)): return a == b
+        case let (.array(a), .array(b)): return a == b
+        case let (.object(a), .object(b)):
+            return a.count == b.count
+                && zip(a, b).allSatisfy { $0.key == $1.key && $0.value == $1.value }
+        default: return false
+        }
+    }
+
     case null
     case bool(Bool)
     case int(Int64)
@@ -86,15 +105,21 @@ indirect enum JSONValue: Equatable, Sendable {
     static func jsonCharLen(_ v: JSONValue) -> Int { serialize(v, sortKeys: false).unicodeScalars.count }
 
     static func serialize(_ v: JSONValue, sortKeys: Bool = false) -> String {
+        serialize(v, sortKeys: sortKeys, separators: (", ", ": "))
+    }
+
+    /// Python json.dumps separators: (item, key-value). Compact dumps use
+    /// (",", ":"); the default pretty form uses (", ", ": ").
+    static func serialize(_ v: JSONValue, sortKeys: Bool, separators: (String, String)) -> String {
         var out = ""
         out.reserveCapacity(64)
-        write(v, to: &out, sortKeys: sortKeys)
+        write(v, to: &out, sortKeys: sortKeys, sep: separators)
         return out
     }
 
     static func serializeSorted(_ v: JSONValue) -> String { serialize(v, sortKeys: true) }
 
-    private static func write(_ v: JSONValue, to out: inout String, sortKeys: Bool) {
+    private static func write(_ v: JSONValue, to out: inout String, sortKeys: Bool, sep: (String, String)) {
         switch v {
         case .null: out += "null"
         case .bool(let b): out += b ? "true" : "false"
@@ -104,8 +129,8 @@ indirect enum JSONValue: Equatable, Sendable {
         case .array(let a):
             out += "["
             for (i, e) in a.enumerated() {
-                if i > 0 { out += ", " }
-                write(e, to: &out, sortKeys: sortKeys)
+                if i > 0 { out += sep.0 }
+                write(e, to: &out, sortKeys: sortKeys, sep: sep)
             }
             out += "]"
         case .object(let pairs):
@@ -113,10 +138,10 @@ indirect enum JSONValue: Equatable, Sendable {
             if sortKeys { ps.sort { $0.key < $1.key } }
             out += "{"
             for (i, p) in ps.enumerated() {
-                if i > 0 { out += ", " }
+                if i > 0 { out += sep.0 }
                 writeString(p.key, to: &out)
-                out += ": "
-                write(p.value, to: &out, sortKeys: sortKeys)
+                out += sep.1
+                write(p.value, to: &out, sortKeys: sortKeys, sep: sep)
             }
             out += "}"
         }
@@ -133,21 +158,12 @@ indirect enum JSONValue: Equatable, Sendable {
         // Shortest roundtrip; Swift's \\(d) prints "1e-05"-style exponents as
         // "1e-05"→"0.00001"? Python repr uses repr(1e-05)="1e-05". Match C99
         // %g-style with exponent threshold 1e-4 like CPython float_repr.
-        var buf = [Int8](repeating: 0, count: 32)
-        let n = buf.withUnsafeMutableBufferPointer { b in
-            sprintf(b.baseAddress!, "%.17g", d)
-        }
-        // %.17g is over-precise; find shortest %.{p}g (Python uses repr = shortest)
+        // String(format:) because Darwin swift overlays mark snprintf variadic-unavailable.
         for p in 1...17 {
-            var b2 = [Int8](repeating: 0, count: 32)
-            let m = b2.withUnsafeMutableBufferPointer { bb in sprintf(bb.baseAddress!, "%.\(p)g", d) }
-            let s = String(cString: b2)
-            if Double(s) == d {
-                _ = n
-                return normalizePyRepr(s)
-            }
+            let s = String(format: "%.\(p)g", d)
+            if Double(s) == d { return normalizePyRepr(s) }
         }
-        return normalizePyRepr(String(cString: buf))
+        return normalizePyRepr(String(format: "%.17g", d))
     }
 
     private static func normalizePyRepr(_ s: String) -> String {
@@ -202,6 +218,22 @@ indirect enum JSONValue: Equatable, Sendable {
 
 /// UTF-16-code-unit JSON scanner (surrogate pairs stay glued as Python does
 /// for lone surrogates; string lengths then match Python len()).
+extension UInt16 {
+    /// Single-ASCII-character initializer (the SDK's NumericConversion
+    /// overlay does not ship `UInt16(ascii:)` on this toolchain).
+    init(ascii: String) {
+        var it = unicodeScalars(of: ascii)
+        guard let s = it.next(), it.next() == nil, s.isASCII else {
+            preconditionFailure("ascii: not a single ASCII scalar")
+        }
+        self = UInt16(s.value)
+    }
+}
+
+private func unicodeScalars(of s: String) -> String.UnicodeScalarView.Iterator {
+    s.unicodeScalars.makeIterator()
+}
+
 struct JSONParser {
     let text: [UInt16]
     var pos = 0
@@ -223,16 +255,16 @@ struct JSONParser {
         skipWS()
         guard pos < text.count else { return nil }
         switch text[pos] {
-        case UInt16(ascii: "{"): return parseObject()
-        case UInt16(ascii: "["): return parseArray()
-        case UInt16(ascii: "\""): return parseString().map { JSONValue.string($0) }
-        case UInt16(ascii: "t"): return match("true").map { _ in .bool(true) }
-        case UInt16(ascii: "f"): return match("false").map { _ in .bool(false) }
-        case UInt16(ascii: "n"):
+        case 0x7B: return parseObject()   // {
+        case 0x5B: return parseArray()    // [
+        case 0x22: return parseString().map { JSONValue.string($0) }  // "
+        case 0x74: return match("true").map { _ in .bool(true) }      // t
+        case 0x66: return match("false").map { _ in .bool(false) }    // f
+        case 0x6E: // n
             if match("null") != nil { return .null }
             if match("NaN") != nil { return .double(.nan) }
             return nil
-        case UInt16(ascii: "I"): return match("Infinity").map { _ in .double(.infinity) }
+        case 0x49: return match("Infinity").map { _ in .double(.infinity) }  // I
         case UInt16(ascii: "-"):
             if match("-Infinity") != nil { return .double(-.infinity) }
             return parseNumber()
@@ -309,7 +341,7 @@ struct JSONParser {
                 case UInt16(ascii: "u"):
                     pos += 1
                     guard pos + 4 <= text.count,
-                          let cp = UInt16(hex4: Array(text[pos..<(pos + 4)])) else { return nil }
+                          let cp = UInt16(hex4: text[pos..<(pos + 4)]) else { return nil }
                     units.append(cp)
                     pos += 3 // +1 below lands past the 4 hex digits
                 default: return nil

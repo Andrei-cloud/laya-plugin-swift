@@ -33,10 +33,11 @@ enum Naming {
     // MARK: module state (tests reset via resetState())
 
     private static let lock = NSLock()
-    private static var _divergences: [JSONValue] = []
-    private static var _resolved: [String: (source: String, value: String?)] = [:]
-    private static var _warned: Set<String> = []
-    private static var _permWarned: Set<String> = []
+    // Lock-guarded module state; Swift 6 needs the explicit nonisolated marker.
+    nonisolated(unsafe) private static var _divergences: [JSONValue] = []
+    nonisolated(unsafe) private static var _resolved: [String: (source: String, value: String?)] = [:]
+    nonisolated(unsafe) private static var _warned: Set<String> = []
+    nonisolated(unsafe) private static var _permWarned: Set<String> = []
 
     static var divergences: [JSONValue] {
         lock.lock(); defer { lock.unlock() }
@@ -208,7 +209,9 @@ enum Naming {
         if stripped.isEmpty { return nil }
         let keyNames: Set<String> = ["LAYA_API_KEY", "JEV_API_KEY", "TYPESAFE_API_KEY", "API_KEY"]
         if stripped.hasPrefix("{") {
-            guard case .object(let pairs)? = JSONValue.parse(stripped)?.objectPairs else { return nil }
+            guard let root = JSONValue.parse(stripped),
+                  case .object(let pairs) = root
+            else { return nil }
             for k in ["LAYA_API_KEY", "JEV_API_KEY", "TYPESAFE_API_KEY", "API_KEY"] {
                 for p in pairs.reversed() where p.key == k {
                     if case .string(let s) = p.value, !s.isEmpty { return s }
