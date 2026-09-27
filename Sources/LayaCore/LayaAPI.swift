@@ -170,7 +170,9 @@ public enum LayaAPI {
         default:
             throw ApiError(code: "state_type", detail: "state must be a string, object, or array")
         }
-        let stateChars = JSONValue.serialize(state, sortKeys: false).unicodeScalars.count
+        // E2: count without materializing (exact: same output accounting
+        // as serialize + count, incl. \uXXXX escapes and ", "/": " seps).
+        let stateChars = JSONValue.charLen(state)
         guard stateChars <= maxStateChars else {
             throw ApiError(code: "state_too_large",
                            detail: "state is \(stateChars) JSON chars (cap \(maxStateChars))")

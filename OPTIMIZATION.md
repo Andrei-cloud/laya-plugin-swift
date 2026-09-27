@@ -257,3 +257,31 @@ boundary since `View` borrows).
 and unmeasurable individually; E1/E2/E6 only show up in **queued** throughput.
 The probe's `--concurrent` mode (E12) is the prerequisite for validating E1's
 claim, and `meanLatencyMs` (E11) becomes the p50 signal once monotonic.
+
+## E2/E6 landed (2026-09-27) — with a wire-semantics trap
+
+`JSONValue.charLen` (validation state cap, no materialization) and
+`JSONValue.serializeSortedPrefix(v, 900)` (engine slate, O(cap) bounded
+writer) replaced two full-document serializations per request.
+
+**TRAP (caught by the object-state differential probe, cost a full
+debug cycle):** the Python side has TWO different dumps with DIFFERENT
+semantics:
+- response/CLI wire + `_json_char_len` + decisions redact:
+  `json.dumps(..., ensure_ascii=False)` — non-ASCII passes through.
+- engine slate `combined_agent.py:109` `json.dumps(state,
+  sort_keys=True)[:900]` — Python DEFAULTS: ensure_ascii=**True**
+  (`中` → `\u4e2d`, emoji → `\ud83d\udc4d` surrogate pair, DEL/é →
+  `\uXXXX`) and separators (", ", ": ").
+Feeding the wrong flavor changes the model's INPUT BYTES (probabilities
+drift ~5-9 pts on non-ASCII states) while every ASCII-only test stays
+green — the goldens are all string states and never exercise this path.
+Swift equivalents: `serialize`/`serializeSorted` = ensure_ascii=False;
+`serializeAsciiSorted` (full) / `serializeSortedPrefix` (bounded) =
+Python-defaults flavor. Golden: `golden/ascii_slate_golden.json`
+(Python-generated truth table, 14 shapes × 8 budgets) + live
+object-state differential probe: python :11270 == swift :11370 byte-exact.
+
+**Rule for this port: any Python `json.dumps` must be read for its
+ensure_ascii/separators kwargs before being mirrored — never assume one
+flavor serves all sites.**

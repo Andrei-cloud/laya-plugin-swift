@@ -1,0 +1,142 @@
+{
+ "plain_str": {
+  "full": "\"plain\"",
+  "p900": "\"plain\"",
+  "p13": "\"plain\"",
+  "p1": "\"",
+  "p0": "",
+  "p5": "\"plai",
+  "p40": "\"plain\"",
+  "p97": "\"plain\""
+ },
+ "escapes": {
+  "full": "\"tab\\tnl\\ncr\\rbell\\u0007x\\fy\"",
+  "p900": "\"tab\\tnl\\ncr\\rbell\\u0007x\\fy\"",
+  "p13": "\"tab\\tnl\\ncr\\",
+  "p1": "\"",
+  "p0": "",
+  "p5": "\"tab\\",
+  "p40": "\"tab\\tnl\\ncr\\rbell\\u0007x\\fy\"",
+  "p97": "\"tab\\tnl\\ncr\\rbell\\u0007x\\fy\""
+ },
+ "nonbmp": {
+  "full": "\"emoji \\ud83d\\udc4d rocket \\ud83d\\ude80\"",
+  "p900": "\"emoji \\ud83d\\udc4d rocket \\ud83d\\ude80\"",
+  "p13": "\"emoji \\ud83d",
+  "p1": "\"",
+  "p0": "",
+  "p5": "\"emoj",
+  "p40": "\"emoji \\ud83d\\udc4d rocket \\ud83d\\ude80\"",
+  "p97": "\"emoji \\ud83d\\udc4d rocket \\ud83d\\ude80\""
+ },
+ "cjk_mixed": {
+  "full": "\"\\u4e2d\\u6587 \\u65e5\\u672c\\u8a9e \\u00e9\\u00e8\\u00ea\"",
+  "p900": "\"\\u4e2d\\u6587 \\u65e5\\u672c\\u8a9e \\u00e9\\u00e8\\u00ea\"",
+  "p13": "\"\\u4e2d\\u6587",
+  "p1": "\"",
+  "p0": "",
+  "p5": "\"\\u4e",
+  "p40": "\"\\u4e2d\\u6587 \\u65e5\\u672c\\u8a9e \\u00e9\\",
+  "p97": "\"\\u4e2d\\u6587 \\u65e5\\u672c\\u8a9e \\u00e9\\u00e8\\u00ea\""
+ },
+ "quote": {
+  "full": "\"quote\\\" backslash\\\\\"",
+  "p900": "\"quote\\\" backslash\\\\\"",
+  "p13": "\"quote\\\" back",
+  "p1": "\"",
+  "p0": "",
+  "p5": "\"quot",
+  "p40": "\"quote\\\" backslash\\\\\"",
+  "p97": "\"quote\\\" backslash\\\\\""
+ },
+ "obj_small": {
+  "full": "{\"a\": \"x\", \"b\": 1}",
+  "p900": "{\"a\": \"x\", \"b\": 1}",
+  "p13": "{\"a\": \"x\", \"b",
+  "p1": "{",
+  "p0": "",
+  "p5": "{\"a\":",
+  "p40": "{\"a\": \"x\", \"b\": 1}",
+  "p97": "{\"a\": \"x\", \"b\": 1}"
+ },
+ "obj_nonbmp_state": {
+  "full": "{\"alpha\": \"value 1 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"beta\": \"value 3 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"delta\": \"value 6 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"eps_k\": \"value 7 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"gamma\": \"value 5 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"iota\": \"value 9 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"mid_key\": \"value 2 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"omega\": \"value 4 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"theta\": \"value 8 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"zeta\": \"value 0 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\"}",
+  "p900": "{\"alpha\": \"value 1 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"beta\": \"value 3 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"delta\": \"value 6 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"eps_k\": \"value 7 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"gamma\": \"value 5 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"iota\": \"value 9 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"mid_key\": \"value 2 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"omega\": \"value 4 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"theta\": \"value 8 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"zeta\": \"value 0 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\"}",
+  "p13": "{\"alpha\": \"va",
+  "p1": "{",
+  "p0": "",
+  "p5": "{\"alp",
+  "p40": "{\"alpha\": \"value 1 with \\ttab and \\\"quot",
+  "p97": "{\"alpha\": \"value 1 with \\ttab and \\\"quotes\\\" and \\u4e2d\\ud83d\\udc4d\", \"beta\": \"value 3 with \\ttab"
+ },
+ "nested": {
+  "full": "{\"k\": [\"a\", null, true, 1.5]}",
+  "p900": "{\"k\": [\"a\", null, true, 1.5]}",
+  "p13": "{\"k\": [\"a\", n",
+  "p1": "{",
+  "p0": "",
+  "p5": "{\"k\":",
+  "p40": "{\"k\": [\"a\", null, true, 1.5]}",
+  "p97": "{\"k\": [\"a\", null, true, 1.5]}"
+ },
+ "empty_arr": {
+  "full": "[]",
+  "p900": "[]",
+  "p13": "[]",
+  "p1": "[",
+  "p0": "",
+  "p5": "[]",
+  "p40": "[]",
+  "p97": "[]"
+ },
+ "empty_obj": {
+  "full": "{}",
+  "p900": "{}",
+  "p13": "{}",
+  "p1": "{",
+  "p0": "",
+  "p5": "{}",
+  "p40": "{}",
+  "p97": "{}"
+ },
+ "deep": {
+  "full": "{\"z\": {\"y\": {\"x\": \"deep\"}}}",
+  "p900": "{\"z\": {\"y\": {\"x\": \"deep\"}}}",
+  "p13": "{\"z\": {\"y\": {",
+  "p1": "{",
+  "p0": "",
+  "p5": "{\"z\":",
+  "p40": "{\"z\": {\"y\": {\"x\": \"deep\"}}}",
+  "p97": "{\"z\": {\"y\": {\"x\": \"deep\"}}}"
+ },
+ "floats": {
+  "full": "[1e+300, -0.0, 0.1]",
+  "p900": "[1e+300, -0.0, 0.1]",
+  "p13": "[1e+300, -0.0",
+  "p1": "[",
+  "p0": "",
+  "p5": "[1e+3",
+  "p40": "[1e+300, -0.0, 0.1]",
+  "p97": "[1e+300, -0.0, 0.1]"
+ },
+ "bigints": {
+  "full": "-9007199254740993",
+  "p900": "-9007199254740993",
+  "p13": "-900719925474",
+  "p1": "-",
+  "p0": "",
+  "p5": "-9007",
+  "p40": "-9007199254740993",
+  "p97": "-9007199254740993"
+ },
+ "nonascii_keys": {
+  "full": "{\"\\u00e9\": \"e acute\", \"\\ud83d\\ude00key\": \"emoji key\"}",
+  "p900": "{\"\\u00e9\": \"e acute\", \"\\ud83d\\ude00key\": \"emoji key\"}",
+  "p13": "{\"\\u00e9\": \"e",
+  "p1": "{",
+  "p0": "",
+  "p5": "{\"\\u0",
+  "p40": "{\"\\u00e9\": \"e acute\", \"\\ud83d\\ude00key\":",
+  "p97": "{\"\\u00e9\": \"e acute\", \"\\ud83d\\ude00key\": \"emoji key\"}"
+ }
+}

@@ -124,6 +124,129 @@ public indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral 
     /// §1 state/response caps count CHARACTERS/bytes of that document.
     public static func jsonCharLen(_ v: JSONValue) -> Int { serialize(v, sortKeys: false).unicodeScalars.count }
 
+    /// jsonCharLen without materializing the document (E2): counts exactly
+    /// what `write` would emit — 1:1 per scalar except escapes (control
+    /// chars \uXXXX = 6, others 1:1) and the ", "/": " separators.
+    public static func charLen(_ v: JSONValue) -> Int {
+        switch v {
+        case .null: return 4
+        case .bool(let b): return b ? 4 : 5
+        case .int(let i): return String(i).unicodeScalars.count
+        case .double(let d): return pyRepr(d).unicodeScalars.count
+        case .string(let s):
+            var n = 2   // quotes
+            for scalar in s.unicodeScalars {
+                switch scalar {
+                case "\"", "\\", "\n", "\r", "\t", "\u{08}", "\u{0C}": n += 2
+                default: n += scalar.value < 0x20 ? 6 : 1
+                }
+            }
+            return n
+        case .array(let a):
+            var n = 2   // brackets
+            for e in a { n += charLen(e) }
+            return n + max(0, a.count - 1) * 2   // ", "
+        case .object(let pairs):
+            var n = 2   // braces
+            for p in pairs { n += charLen(.string(p.key)) + 2 + charLen(p.value) }   // ": "
+            return n + max(0, pairs.count - 1) * 2   // ", "
+        }
+    }
+
+    /// serializeSorted(v).prefix(maxScalars) without building the whole
+    /// document (E6): the engine slate only ever reads the first 900
+    /// scalars of a ≤60 KB sorted dump; a big state used to serialize
+    /// fully first. Exact: identical prefix to serializeSorted+prefix.
+    ///
+    /// ensure_ascii=TRUE semantics — combined_agent.py:109 is
+    /// `json.dumps(state, sort_keys=True)[:900]` with Python DEFAULTS:
+    /// separators (", ", ": ") AND non-ASCII escaped to \uXXXX (non-BMP
+    /// via UTF-16 surrogate pairs). The wire-response writer (serialize)
+    /// is ensure_ascii=False; this one is NOT. Caught by the object-state
+    /// differential probe (中/emoji state diverged Swift vs Python model
+    /// input).
+    public static func serializeSortedPrefix(_ v: JSONValue, maxScalars: Int) -> String {
+        var out = ""
+        out.reserveCapacity(min(maxScalars + 16, 1024))
+        var budget = maxScalars
+        writeBounded(v, to: &out, sortKeys: true, sep: (", ", ": "), budget: &budget)
+        return out
+    }
+
+    private static func writeBounded(_ v: JSONValue, to out: inout String, sortKeys: Bool,
+                                     sep: (String, String), budget: inout Int) {
+        if budget <= 0 { return }
+        switch v {
+        case .null: emit("null", to: &out, &budget)
+        case .bool(let b): emit(b ? "true" : "false", to: &out, &budget)
+        case .int(let i): emit(String(i), to: &out, &budget)
+        case .double(let d): emit(pyRepr(d), to: &out, &budget)
+        case .string(let s): writeStringBounded(s, to: &out, budget: &budget)
+        case .array(let a):
+            emit("[", to: &out, &budget)
+            for (i, e) in a.enumerated() {
+                if budget <= 0 { break }
+                if i > 0 { emit(sep.0, to: &out, &budget) }
+                writeBounded(e, to: &out, sortKeys: sortKeys, sep: sep, budget: &budget)
+            }
+            if budget > 0 { emit("]", to: &out, &budget) }
+        case .object(let pairs):
+            var ps = pairs
+            if sortKeys { ps.sort { $0.key < $1.key } }
+            emit("{", to: &out, &budget)
+            for (i, p) in ps.enumerated() {
+                if budget <= 0 { break }
+                if i > 0 { emit(sep.0, to: &out, &budget) }
+                writeStringBounded(p.key, to: &out, budget: &budget)
+                emit(sep.1, to: &out, &budget)
+                writeBounded(p.value, to: &out, sortKeys: sortKeys, sep: sep, budget: &budget)
+            }
+            if budget > 0 { emit("}", to: &out, &budget) }
+        }
+    }
+
+    private static func emit(_ s: String, to out: inout String, _ budget: inout Int) {
+        for scalar in s.unicodeScalars {
+            if budget <= 0 { return }
+            out.unicodeScalars.append(scalar)
+            budget -= 1
+        }
+    }
+
+    private static func writeStringBounded(_ s: String, to out: inout String, budget: inout Int) {
+        emit("\"", to: &out, &budget)
+        for scalar in s.unicodeScalars {
+            if budget <= 0 { return }
+            switch scalar {
+            case "\"": emit("\\\"", to: &out, &budget)
+            case "\\": emit("\\\\", to: &out, &budget)
+            case "\n": emit("\\n", to: &out, &budget)
+            case "\r": emit("\\r", to: &out, &budget)
+            case "\t": emit("\\t", to: &out, &budget)
+            case "\u{08}": emit("\\b", to: &out, &budget)
+            case "\u{0C}": emit("\\f", to: &out, &budget)
+            default:
+                if scalar.value < 0x20 {
+                    emit(String(format: "\\u%04x", scalar.value), to: &out, &budget)
+                } else if scalar.value < 0x7F {
+                    // ensure_ascii=True: ASCII printable passes through.
+                    out.unicodeScalars.append(scalar); budget -= 1
+                } else if scalar.value <= 0xFFFF {
+                    // BMP non-ASCII (incl. DEL 0x7F): \uXXXX (6 chars).
+                    emit(String(format: "\\u%04x", scalar.value), to: &out, &budget)
+                } else {
+                    // Non-BMP: UTF-16 surrogate pair, two \u escapes (12
+                    // chars) — exactly Python's ensure_ascii encoding.
+                    let v = scalar.value - 0x10000
+                    let hi = 0xD800 + (v >> 10)
+                    let lo = 0xDC00 + (v & 0x3FF)
+                    emit(String(format: "\\u%04x\\u%04x", hi, lo), to: &out, &budget)
+                }
+            }
+        }
+        emit("\"", to: &out, &budget)
+    }
+
     public static func serialize(_ v: JSONValue, sortKeys: Bool = false) -> String {
         serialize(v, sortKeys: sortKeys, separators: (", ", ": "))
     }
@@ -138,6 +261,74 @@ public indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral 
     }
 
     public static func serializeSorted(_ v: JSONValue) -> String { serialize(v, sortKeys: true) }
+
+    /// Python `json.dumps(v, sort_keys=True)` with DEFAULTS — ensure_ascii
+    /// TRUE (\uXXXX escapes, UTF-16 surrogate pairs for non-BMP),
+    /// separators (", ", ": "). This is the combined_agent.py:109 wire
+    /// (NOT the response wire, which is ensure_ascii=False). Full
+    /// materialization; the bounded `serializeSortedPrefix` is its
+    /// O(cap) twin and this is its naive differential oracle.
+    public static func serializeAsciiSorted(_ v: JSONValue) -> String {
+        var out = ""
+        out.reserveCapacity(64)
+        writeAscii(v, to: &out)
+        return out
+    }
+
+    private static func writeAscii(_ v: JSONValue, to out: inout String) {
+        switch v {
+        case .null: out += "null"
+        case .bool(let b): out += b ? "true" : "false"
+        case .int(let i): out += String(i)
+        case .double(let d): out += pyRepr(d)
+        case .string(let s): writeStringAscii(s, to: &out)
+        case .array(let a):
+            out += "["
+            for (i, e) in a.enumerated() {
+                if i > 0 { out += ", " }
+                writeAscii(e, to: &out)
+            }
+            out += "]"
+        case .object(let pairs):
+            let ps = pairs.sorted { $0.key < $1.key }
+            out += "{"
+            for (i, p) in ps.enumerated() {
+                if i > 0 { out += ", " }
+                writeStringAscii(p.key, to: &out)
+                out += ": "
+                writeAscii(p.value, to: &out)
+            }
+            out += "}"
+        }
+    }
+
+    private static func writeStringAscii(_ s: String, to out: inout String) {
+        out += "\""
+        for scalar in s.unicodeScalars {
+            switch scalar {
+            case "\"": out += "\\\""
+            case "\\": out += "\\\\"
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            case "\u{08}": out += "\\b"
+            case "\u{0C}": out += "\\f"
+            default:
+                if scalar.value < 0x20 || scalar.value >= 0x7F {
+                    if scalar.value <= 0xFFFF {
+                        out += String(format: "\\u%04x", scalar.value)
+                    } else {
+                        let v = scalar.value - 0x10000
+                        out += String(format: "\\u%04x\\u%04x",
+                                      0xD800 + (v >> 10), 0xDC00 + (v & 0x3FF))
+                    }
+                } else {
+                    out.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        out += "\""
+    }
 
     private static func write(_ v: JSONValue, to out: inout String, sortKeys: Bool, sep: (String, String)) {
         switch v {

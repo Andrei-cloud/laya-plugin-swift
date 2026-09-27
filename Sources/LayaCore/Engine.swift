@@ -263,7 +263,9 @@ public actor Engine {
         if let s = state.stringValue {
             stateText = s
         } else {
-            stateText = String(JSONValue.serializeSorted(state).prefix(900))
+            // E6: bounded writer — only the first 900 scalars of the sorted
+            // dump are ever read by the sequence builder (Python [:900]).
+            stateText = JSONValue.serializeSortedPrefix(state, maxScalars: 900)
         }
         let built = Sequence.buildSequence(tok: tokenizer,
                                            state: .string(stateText), q: qb,
