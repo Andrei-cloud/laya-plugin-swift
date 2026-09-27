@@ -56,24 +56,38 @@ public enum MCP {
     // MARK: - tool specs (verbatim from legacy laya_mcp.py)
 
     public static func toolsSpec() -> JSONValue {
+        // Property values are FULL schema objects ({"type":…,"description":…})
+        // — exactly the legacy laya_mcp.py ASK_SCHEMA/GUARD_SCHEMA. Bare
+        // strings are legal JSON-Schema shorthand but Hermes's strict
+        // pydantic Tool model rejects them (dict_type) — regression-
+        // verified 2026-09-28 against `hermes mcp add`.
         let askSchema = JSONValue.obj(
             "type", .string("object"),
             "properties", JSONValue.obj(
-                "state", .string(
-                    "Agent state: last action/command + short context. "
-                    + "Plain text or JSON; <=60 000 chars."),
-                "questions", .string(
-                    "Named wire questions, one per key: {name: "
-                    + "{type:'noul'|'choice'|'score', instructions:str, "
-                    + "criteria?: {opt:meaning} | [levels lowest-first]}}. "
-                    + "noul carries no criteria; choice needs >=2 options; "
-                    + "score needs >=2 rubric levels."),
-                "model", .string("Optional id; echoed back verbatim.")),
+                "state", JSONValue.obj(
+                    "type", .string("string"),
+                    "description", .string(
+                        "Agent state: last action/command + short context. "
+                        + "Plain text or JSON; <=60 000 chars.")),
+                "questions", JSONValue.obj(
+                    "type", .string("object"),
+                    "description", .string(
+                        "Named wire questions, one per key: {name: "
+                        + "{type:'noul'|'choice'|'score', instructions:str, "
+                        + "criteria?: {opt:meaning} | [levels lowest-first]}}. "
+                        + "noul carries no criteria; choice needs >=2 options; "
+                        + "score needs >=2 rubric levels.")),
+                "model", JSONValue.obj(
+                    "type", .string("string"),
+                    "description", .string("Optional id; echoed back verbatim."))),
             "required", .array([.string("state"), .string("questions")]))
         let guardSchema = JSONValue.obj(
             "type", .string("object"),
             "properties", JSONValue.obj(
-                "command", .string("The exact command or action about to run.")),
+                "command", JSONValue.obj(
+                    "type", .string("string"),
+                    "description", .string(
+                        "The exact command or action about to run."))),
             "required", .array([.string("command")]))
         return .array([
             JSONValue.obj(
@@ -157,8 +171,7 @@ public enum MCP {
         let id = msg["id"]
 
         if method.hasPrefix("notifications/") || id == nil {
-            _ = await bridge   // consumed silently (initialized etc.)
-            return .none
+            return .none       // consumed silently (initialized etc.)
         }
 
         switch method {
