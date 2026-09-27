@@ -1,0 +1,12 @@
+{
+ "impl": "transformers/tokenizers (python)",
+ "load_seconds": 2.311,
+ "texts": 62,
+ "total_chars": 11136,
+ "median_pass_s": 0.001633,
+ "best_pass_s": 0.001565,
+ "tokens_per_s_median_pass": 1437362,
+ "chars_per_s_median_pass": 6820397,
+ "short_text_us": 12.2,
+ "long_text_us": 860.7
+}

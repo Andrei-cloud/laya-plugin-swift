@@ -26,6 +26,58 @@ import Foundation
 ///     lowest-rank adjacent pair (ties: leftmost), ONE instance per pass,
 ///     re-evaluating after each merge; rank = first JSON merges-list index
 ///     of the pair; merged id = vocab[a + b].
+/// Open-addressing table for the 580k-entry merge-rank map (OPTIMIZATION.md
+/// T2). Swift's Dictionary SipHashes every probe; these keys are
+/// (aid<<32|bid) pairs with both halves < 262144, so the sentinel
+/// UInt64.max is provably unreachable and a mix+linear-probe table is both
+/// exact and several times faster on the BPE inner scan. Fixed after load
+/// (inserts happen only while building), load factor ≤ 0.5.
+struct PairRankTable: Sendable {
+    private var keys: [UInt64]
+    private var vals: [UInt64]
+    private var mask: Int
+
+    init(capacity: Int) {
+        var cap = 1
+        while cap < capacity * 2 { cap <<= 1 }
+        keys = [UInt64](repeating: .max, count: cap)
+        vals = [UInt64](repeating: 0, count: cap)
+        mask = cap - 1
+    }
+
+    @inline(__always)
+    private static func mix(_ k: UInt64) -> UInt64 {
+        var x = k &* 0x9E3779B97F4A7C15
+        x ^= x >> 29
+        x &*= 0xBF58476D1CE4E5B9
+        x ^= x >> 32
+        return x
+    }
+
+    /// First-wins insert (merges list is index-ordered; duplicates keep the
+    /// lowest index). Returns true if the value was newly inserted.
+    @discardableResult
+    mutating func insertFirstWins(_ key: UInt64, _ value: UInt64) -> Bool {
+        var i = Int(Self.mix(key) & UInt64(mask))
+        while true {
+            if keys[i] == .max { keys[i] = key; vals[i] = value; return true }
+            if keys[i] == key { return false }
+            i = (i + 1) & mask
+        }
+    }
+
+    @inline(__always)
+    func lookup(_ key: UInt64) -> UInt64? {
+        var i = Int(Self.mix(key) & UInt64(mask))
+        while true {
+            let k = keys[i]
+            if k == key { return vals[i] }
+            if k == .max { return nil }
+            i = (i + 1) & mask
+        }
+    }
+}
+
 public final class LayaTokenizer: @unchecked Sendable {
     /// Byte-exact string key. Swift's String `==`/`hash` implement Unicode
     /// CANONICAL equivalence — `";" == "\u{037E}"` is TRUE — which silently
@@ -51,8 +103,8 @@ public final class LayaTokenizer: @unchecked Sendable {
         return out
     }
     private let vocabR: [UInt32: String]
-    /// packed (aId << 32 | bId) -> (rank, newId)
-    private let rank: [UInt64: (rank: UInt32, newId: UInt32)]
+    /// packed (aId << 32 | bId) -> packed (mergeIndex << 32 | newId)
+    private let rank: PairRankTable
     /// added tokens, longest content first (first hit at a position wins)
     private let added: [(content: [Unicode.Scalar], first: Unicode.Scalar,
                          id: UInt32, lstrip: Bool)]
@@ -67,6 +119,15 @@ public final class LayaTokenizer: @unchecked Sendable {
 
     /// U+2581, the Metaspace replacement letter.
     public static let repl: Unicode.Scalar = Unicode.Scalar(0x2581)!
+
+    /// B1 (bench validity): when true, encode() skips the chunk cache and
+    /// measures real BPE work. Bench-only knob; default off.
+    public nonisolated(unsafe) var cacheBypass = false
+
+    /// Drop all cached chunk results (bench mode transitions).
+    public func clearChunkCache() {
+        cacheLock.lock(); chunkCache.removeAll(keepingCapacity: true); cacheLock.unlock()
+    }
 
     private let cacheLock = NSLock()
     /// BPE chunk cache keyed by SCALAR VALUES — exact integer equality,
@@ -135,7 +196,7 @@ public final class LayaTokenizer: @unchecked Sendable {
             if let first = sc.next(), sc.next() == nil {
                 scalarToId[first.value] = u
             }
-            if p.key.utf8.count == 5, p.key.hasPrefix("<0x"), p.key.hasSuffix(">"),
+            if p.key.utf8.count == 6, p.key.hasPrefix("<0x"), p.key.hasSuffix(">"),
                let b = UInt8(p.key.dropFirst(3).dropLast(), radix: 16) {
                 byteTok[Int(b)] = u
             }
@@ -148,17 +209,15 @@ public final class LayaTokenizer: @unchecked Sendable {
         // vocab[a+b] (every JSON merge concatenation exists in this vocab;
         // fall back to the unk id if one ever does not).
         let unkProbe = vocabK[TokenKey("<unk>")] ?? 0
-        var rank: [UInt64: (rank: UInt32, newId: UInt32)] = [:]
-        rank.reserveCapacity(mlist.count)
+        var rank = PairRankTable(capacity: mlist.count)
         for (i, node) in mlist.enumerated() {
             guard case .array(let pr) = node, pr.count == 2,
                   let a = pr[0].stringValue, let b = pr[1].stringValue,
                   let aid = vocabK[TokenKey(a)], let bid = vocabK[TokenKey(b)]
             else { continue }
             let key = (UInt64(aid) << 32) | UInt64(bid)
-            if rank[key] == nil {
-                rank[key] = (UInt32(i), vocabK[TokenKey(a + b)] ?? unkProbe)
-            }
+            // first-wins: merges list is index-ordered
+            rank.insertFirstWins(key, (UInt64(i) << 32) | UInt64(vocabK[TokenKey(a + b)] ?? unkProbe))
         }
 
         var addedList: [(content: [Unicode.Scalar], first: Unicode.Scalar,
@@ -192,7 +251,7 @@ public final class LayaTokenizer: @unchecked Sendable {
 
     private init(vocabK: [TokenKey: UInt32], scalarToId: [UInt32: UInt32],
                  byteTok: [UInt32], vocabR: [UInt32: String],
-                 rank: [UInt64: (rank: UInt32, newId: UInt32)],
+                 rank: PairRankTable,
                  added: [(content: [Unicode.Scalar], first: Unicode.Scalar,
                           id: UInt32, lstrip: Bool)],
                  addedBuckets: [UInt32: [(content: [Unicode.Scalar], id: UInt32, lstrip: Bool)]],
@@ -266,12 +325,16 @@ public final class LayaTokenizer: @unchecked Sendable {
         var scalars = Array(piece.unicodeScalars)
         if scalars.isEmpty { return [] }
         for i in scalars.indices where scalars[i] == " " { scalars[i] = Self.repl }
-        if scalars[0] != Self.repl { scalars.insert(Self.repl, at: 0) }
+        if scalars[scalars.startIndex] != Self.repl {
+            // prepend without memmoving the whole array
+            scalars = [Self.repl] + scalars
+        }
         let n = scalars.count
         // alternating intervals: each ▁ char is its own match interval,
         // each run of non-▁ chars is one non-match interval
         struct IV { let s: Int; var e: Int; let m: Bool }
         var ivs: [IV] = []
+        ivs.reserveCapacity(n / 2 + 1)
         var i = 0
         while i < n {
             if scalars[i] == Self.repl {
@@ -285,6 +348,7 @@ public final class LayaTokenizer: @unchecked Sendable {
         // reversed MergedWithNext fold: a match not immediately preceded by
         // another match extends the FOLLOWING interval's start left
         var acc: [(Int, Int)] = []
+        acc.reserveCapacity(n / 2 + 1)
         var prevMatch = false
         for iv in ivs.reversed() {
             if iv.m && !prevMatch {
@@ -332,27 +396,35 @@ public final class LayaTokenizer: @unchecked Sendable {
         while syms.count > 1 {
             var best: UInt32 = .max
             var bi = -1
-            for i in 0..<syms.count - 1 {
-                let key = (UInt64(syms[i]) << 32) | UInt64(syms[i + 1])
-                if let r = rank[key], r.rank < best { best = r.rank; bi = i }
+            var newId: UInt32 = 0
+            syms.withUnsafeBufferPointer { buf in
+                for i in 0..<buf.count - 1 {
+                    let key = (UInt64(buf[i]) << 32) | UInt64(buf[i + 1])
+                    if let v = rank.lookup(key) {
+                        let r = UInt32(v >> 32)
+                        if r < best { best = r; bi = i; newId = UInt32(truncatingIfNeeded: v) }
+                    }
+                }
             }
             if bi < 0 { break }
-            let key = (UInt64(syms[bi]) << 32) | UInt64(syms[bi + 1])
-            let newId = rank[key]!.newId
-            syms.removeSubrange(bi...(bi + 1))
-            syms.insert(newId, at: bi)
+            // fused tail move: one replaceSubrange instead of remove+insert
+            syms.replaceSubrange(bi...(bi + 1), with: [newId])
         }
         return syms
     }
 
     private func bpeCached(_ chunk: String) -> [UInt32] {
+        if cacheBypass { return bpe(chunk) }
         let key = chunk.unicodeScalars.map { $0.value }
         cacheLock.lock()
         if let hit = chunkCache[key] { cacheLock.unlock(); return hit }
         cacheLock.unlock()
         let ids = bpe(chunk)
         cacheLock.lock()
-        if chunkCache.count < 65536 { chunkCache[key] = ids }
+        // T6: generation eviction — at cap, clear (O(1), keeps capacity)
+        // instead of pinning stale entries forever and never caching again.
+        if chunkCache.count >= 65536 { chunkCache.removeAll(keepingCapacity: true) }
+        chunkCache[key] = ids
         cacheLock.unlock()
         return ids
     }
@@ -364,6 +436,7 @@ public final class LayaTokenizer: @unchecked Sendable {
     /// cls/sep/mask markers itself in buildSequence).
     public func encode(_ text: String) -> [UInt32] {
         var ids: [UInt32] = []
+        ids.reserveCapacity(text.unicodeScalars.count / 2 + 16)
         for piece in splitAdded(text) {
             switch piece {
             case .tok(let id):

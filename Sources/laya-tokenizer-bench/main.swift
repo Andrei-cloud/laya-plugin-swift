@@ -2,9 +2,13 @@ import Foundation
 import LayaCore
 
 /// Swift tokenizer benchmark — the CHALLENGER in the Python-vs-Swift A/B.
-/// Mirrors Scripts/bench_tokenizer_py.py exactly: same corpus
+/// Mirrors Scripts/bench_tokenizer_py.py: same corpus
 /// (golden/bench_corpus.json), same warm-up policy (3 passes), same timing
 /// (10 passes, median reported), same short/long split.
+///
+/// B1: reports BOTH cache-bypassed (real BPE work, comparable to the Python
+/// challenger which has no chunk cache) and warm-cache medians as separate
+/// fields. B2: text lengths are precomputed once, never inside timed loops.
 ///
 /// Usage: laya-tokenizer-bench <tokenizer.json> [bench_corpus.json] [--json out.json]
 
@@ -43,7 +47,9 @@ let tok = try LayaTokenizer.load(fromFile: tokPath)
 let loadS = Date().timeIntervalSince(t0)
 
 let texts = try loadTexts(corpusPath)
-let totalChars = texts.reduce(0) { $0 + $1.unicodeScalars.count }
+// B2: one walk for lengths; everything downstream filters on lens[i].
+let lens = texts.map { $0.unicodeScalars.count }
+let totalChars = lens.reduce(0, +)
 let passes = 10, warmup = 3
 
 func pass() -> (seconds: Double, tokens: Int) {
@@ -53,48 +59,63 @@ func pass() -> (seconds: Double, tokens: Int) {
     return (Date().timeIntervalSince(s), ntok)
 }
 
-for _ in 0..<warmup { _ = pass() }
-
-var timings: [Double] = []
-var lastTokens = 0
-for _ in 0..<passes {
-    let (sec, ntok) = pass()
-    timings.append(sec)
-    lastTokens = ntok
+/// One timing mode: warmup+passes. cold = cache-bypassed (real BPE work).
+func timed(cold: Bool) -> (median: Double, best: Double, tokens: Int, total: Double) {
+    tok.cacheBypass = cold
+    if cold { tok.clearChunkCache() }
+    for _ in 0..<warmup { _ = pass() }
+    var timings: [Double] = []
+    var lastTokens = 0
+    for _ in 0..<passes {
+        let (sec, ntok) = pass()
+        timings.append(sec)
+        lastTokens = ntok
+    }
+    timings.sort()
+    return (timings[timings.count / 2], timings[0], lastTokens, timings.reduce(0, +))
 }
-timings.sort()
-let medianPass = timings[timings.count / 2]
-let bestPass = timings[0]
-let totalTokTime = timings.reduce(0, +)
 
-func subsetUs(_ filter: (String) -> Bool) -> Double? {
-    let sub = texts.filter(filter)
-    guard !sub.isEmpty else { return nil }
+func subsetUs(_ match: (Int) -> Bool, cold: Bool) -> Double? {
+    let idx = lens.indices.filter { match(lens[$0]) }
+    guard !idx.isEmpty else { return nil }
+    tok.cacheBypass = cold
+    if cold { tok.clearChunkCache() }
     var ps: [Double] = []
     for _ in 0..<passes {
         let s = Date()
-        for t in sub { _ = tok.encode(t) }
+        for i in idx { _ = tok.encode(texts[i]) }
         ps.append(Date().timeIntervalSince(s))
     }
     ps.sort()
-    return ps[ps.count / 2] / Double(sub.count) * 1e6
+    return ps[ps.count / 2] / Double(idx.count) * 1e6
 }
 
-let shortUs = subsetUs { $0.unicodeScalars.count < 200 }
-let longUs = subsetUs { $0.unicodeScalars.count >= 4096 }
+// cold first so the warm pass builds the cache from scratch afterwards
+let cold = timed(cold: true)
+let warm = timed(cold: false)
+tok.cacheBypass = false
 
 var lines: [String] = [
     "\"impl\": \"laya-core tokenizer (swift)\"",
     "\"load_seconds\": \((loadS * 1000).rounded() / 1000)",
     "\"texts\": \(texts.count)",
     "\"total_chars\": \(totalChars)",
-    "\"median_pass_s\": \((medianPass * 1e6).rounded() / 1e6)",
-    "\"best_pass_s\": \((bestPass * 1e6).rounded() / 1e6)",
-    "\"tokens_per_s_median_pass\": \(Int((Double(lastTokens * passes) / totalTokTime).rounded()))",
-    "\"chars_per_s_median_pass\": \(Int((Double(totalChars) / medianPass).rounded()))",
+    "\"mode\": \"cold+warm\"",
+    "\"median_pass_s_cold\": \((cold.median * 1e6).rounded() / 1e6)",
+    "\"best_pass_s_cold\": \((cold.best * 1e6).rounded() / 1e6)",
+    "\"median_pass_s_warm\": \((warm.median * 1e6).rounded() / 1e6)",
+    "\"tokens_per_s_cold\": \(Int((Double(cold.tokens * passes) / cold.total).rounded()))",
+    "\"tokens_per_s_warm\": \(Int((Double(warm.tokens * passes) / warm.total).rounded()))",
+    "\"chars_per_s_cold\": \(Int((Double(totalChars) / cold.median).rounded()))",
 ]
-if let s = shortUs { lines.append("\"short_text_us\": \((s * 10).rounded() / 10)") }
-if let l = longUs { lines.append("\"long_text_us\": \((l * 10).rounded() / 10)") }
+for (label, coldFlag) in [("_cold", true), ("_warm", false)] {
+    if let s = subsetUs({ $0 < 200 }, cold: coldFlag) {
+        lines.append("\"short_text_us\(label)\": \((s * 10).rounded() / 10)")
+    }
+    if let l = subsetUs({ $0 >= 4096 }, cold: coldFlag) {
+        lines.append("\"long_text_us\(label)\": \((l * 10).rounded() / 10)")
+    }
+}
 
 let out = "{\n  " + lines.joined(separator: ",\n  ") + "\n}\n"
 if jsonOut.isEmpty {

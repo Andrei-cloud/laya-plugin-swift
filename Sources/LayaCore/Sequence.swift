@@ -82,13 +82,14 @@ public enum Sequence {
         let order = optionOrder ?? Array(opts.indices)
         let t = q["type"]?.stringValue ?? q["t"]?.stringValue ?? ""
         let insRaw = q["instructions"]?.stringValue ?? q["ins"]?.stringValue ?? ""
-        let ins = insRaw.replacingOccurrences(of: maskTok, with: " ")
+        let ins = maskFree(insRaw, maskTok)
         var headIds = tok.encode("\(t) question: \(ins)")
 
         var optIds: [[UInt32]] = []
+        optIds.reserveCapacity(order.count)
         for i in order {
             var o: [UInt32] = [tok.maskId]
-            o.append(contentsOf: tok.encode(" " + opts[i].replacingOccurrences(of: maskTok, with: " ")).prefix(48))
+            o.append(contentsOf: tok.encode(" " + maskFree(opts[i], maskTok)).prefix(48))
             optIds.append(o)
         }
         var optBudget = headMaxLength - optIds.reduce(0) { $0 + $1.count }
@@ -110,9 +111,12 @@ public enum Sequence {
         ids.append(UInt32(tok.sepId))
 
         let room = max(0, maxLength - ids.count - 1)
-        let stateText = serializeState(state).replacingOccurrences(of: maskTok, with: " ")
+        let stateText = maskFree(serializeState(state), maskTok)
         var st = tok.encode(stateText)
-        st = truncateLeft ? Array(st.suffix(room)) : Array(st.prefix(room))
+        // S1: skip the slice entirely when nothing truncates (common case)
+        if st.count > room {
+            st = truncateLeft ? Array(st.suffix(room)) : Array(st.prefix(room))
+        }
         ids.append(contentsOf: st)
         ids.append(UInt32(tok.sepId))
         return Built(ids: Array(ids.prefix(maxLength)),
@@ -121,11 +125,16 @@ public enum Sequence {
 
     // MARK: - confidence / calibration (verbatim ports)
 
+    /// S2: replacingOccurrences is NSString-backed (bridges + allocates even
+    /// when the needle is absent — the common case). Guard on contains().
+    static func maskFree(_ s: String, _ maskTok: String) -> String {
+        s.contains(maskTok) ? s.replacingOccurrences(of: maskTok, with: " ") : s
+    }
+
     /// Normalized Shannon entropy confidence: 1 - H(p) / log(k).
     public static func confidenceFromProbs(_ p: [Double], k: Int) -> Double {
         if k < 2 { return 1.0 }
-        let pk = Array(p.prefix(k))
-        let ent = -pk.reduce(0.0) { $0 + $1 * log(max($1, 1e-12)) }
+        let ent = -p.prefix(k).reduce(0.0) { $0 + $1 * log(max($1, 1e-12)) }
         return min(1.0, max(0.0, 1.0 - ent / log(Double(k))))
     }
 

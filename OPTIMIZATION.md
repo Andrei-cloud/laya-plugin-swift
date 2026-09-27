@@ -146,20 +146,110 @@ file's own arithmetic is cold.
 
 ## Priority summary (apply in this order)
 
-| Rank | ID | One-line | Est. win |
-|------|----|----------|----------|
-| 1 | T3 | scalar-indexed single-char vocab table | −~all per-char String allocs in BPE stage |
-| 2 | T2 | trivial hasher + packed value for `rank` | ~2× merge-scan lookups |
-| 3 | T1 | span-based merge scan + fused tail move + carried newId | 1.5–2.5× merge phase |
-| 4 | B1/B2 | bench cache-bypass mode + precomputed lengths | valid A/B numbers (prereq for measuring all of the above) |
-| 5 | T5/T7 | scalar-ranges-through-pipeline + lock removal | 20–35% encode overhead |
-| 6 | J1 | UTF-8/mmap parser for the 34 MB load | load RSS −~100 MB, −30–50 ms |
-| 7 | P1/P2 | AIModelCache(persistent) + L_max-padded persistent buffers | 5.2 s cold → sub-s; no per-shape re-specialization |
-| 8 | T4 | byte-fallback 256-entry table | kills `String(format:)` in fallback |
-| 9 | T6, T8–T12, J2–J8, S1–S5, B3–B4, P3–P5 | MED/LOW cleanups | each small; see tables |
+| Rank | ID | One-line | Est. win | Status (measured 2026-09-27) |
+|------|----|----------|----------|------------------------------|
+| 1 | T3 | scalar-indexed single-char vocab table | −~all per-char String allocs in BPE stage | ✅ applied (landed with the canonical-equivalence fix; part of −6.6% pass) |
+| 2 | T2 | trivial hasher + packed value for `rank` | ~2× merge-scan lookups | ✅ applied as `PairRankTable` (open addressing; Swift's `Hasher` is a concrete struct — no Dictionary-shim exists); included in −6.6% |
+| 3 | T1 | span-based merge scan + fused tail move + carried newId | 1.5–2.5× merge phase | ✅ applied (withUnsafeBufferPointer + replaceSubrange + carried newId) |
+| 4 | B1/B2 | bench cache-bypass mode + precomputed lengths | valid A/B numbers | ✅ applied — old claims corrected in golden/BENCH.md (1.46×/1.10× were cache-inflated; honest cold: +11% overall, 1.84× short, −16.5% long vs python) |
+| 5 | T5/T7 | scalar-ranges-through-pipeline + lock removal | 20–35% encode overhead | ⏳ open |
+| 6 | J1 | UTF-8/mmap parser for the 34 MB load | load RSS −~100 MB, −30–50 ms | ⏳ open |
+| 7 | P1/P2 | AIModelCache(persistent) + L_max-padded persistent buffers | 5.2 s cold → sub-s; no per-shape re-specialization | ✅ P2 done (Engine persistent buffers); P1 open |
+| 8 | T4 | byte-fallback 256-entry table | kills `String(format:)` in fallback | ✅ applied (`byteTok[256]`; note: `<0xNN>` keys are **6** bytes — a 5-byte guard silently broke byte fallback once, caught by parity corpus) |
+| 9 | T6, T8–T12, J2–J8, S1–S5, B3–B4, P3–P5 | MED/LOW cleanups | each small; see tables | ✅ T6 (generation eviction), T10, T11, S1, S2, S3, S5 applied; T8 covered by PairRankTable insert; rest open |
 
 **Parity gate reminder:** every tokenizer-side technique above (T1–T9) must be
 re-validated against `TokenizerParityTests.swift` (4021-string golden corpus)
 after application; none of them changes emitted ids by design, but T6's
 cache-key change and T1's merge-fusion are the two with byte-parity blast
-radius if implemented sloppily.
+radius if implemented sloppily. **Enforced in practice:** the T4 5-vs-6-byte
+bug and a dropped normalize loop were both caught by this gate before commit.
+
+**Cross-benchmark result of the applied set (cold = cache-bypassed, median of
+3 runs, `golden/bench_runs/`):** OLD(ad0c611)→NEW −6.6 % pass ms, +6.5 %
+tok/s, −11 % short-text, −7 % long-text, −2 % load; vs python cold +11 %
+overall / 1.84× short / −16.5 % long (honest loss, see BENCH.md).
+
+---
+
+## Engine milestone review (Engine.swift + probe)
+
+Scope: `Sources/LayaCore/Engine.swift`, `Sources/LayaCore/LayaAPI.swift`,
+`Sources/LayaCore/LayaOps.swift`, `Sources/laya-engine-probe/main.swift`
+(+ cross-referenced `Naming.swift`/`Sequence.swift` call sites). Hot path:
+`Engine.decide()`/`Engine.question()` per request, ~19.5 ms GPU pass
+dominating; ratings below are relative to that budget. Load-time items
+(provenance/temps/tokenizer) are one-shot and rated accordingly. E-findings
+only; T/J/S/B/P items are not re-flagged.
+
+| # | Impact | Location | Finding | Concrete technique | Est. benefit |
+|---|--------|----------|---------|--------------------|--------------|
+| E1 | **HIGH (throughput, high-QPS only)** | `decide` 334–383, `encodeItem` 200–242, `runPass` 407 | Everything upstream of the GPU pass — tokenize (`Sequence.buildSequence`, dominated by `tok.encode`), `serializeSorted(state)` for structured states, criteria re-rendering — runs **inside the actor**, so per-request CPU work (order 1–3 ms) serializes *behind* the 19.5 ms model pass instead of overlapping it. Steady-state ceiling is `1 / (19.5 + cpu)` req/s instead of ~`1 / max(19.5, cpu)`. | Split the pipeline: make `encodeItem` `nonisolated` (it only reads immutable `route`/`tokenizer`/`Lmax`/`Kmax` — all `let`/Sendable) and call it as `let item = try await Self.encodeItemOffActor(...)` *before* hopping into the actor; the actor then does only buffer-fill → `fn.run` → softmax. `fn.run` is `await`ed, so the actor is free to accept the *next* request's buffer fill only after the pass returns — to overlap fill+run too, keep a second buffer set and a 1-deep pipelining flag, but stage-1 overlap alone recovers most of the win. | +5–15% request throughput at QPS where the queue is non-empty; zero latency change for a single in-flight request (correctly stays 19.5 ms). |
+| E2 | **MED** | `LayaAPI.validateRequest` LayaAPI.swift:170 | `JSONValue.serialize(state, sortKeys: false).unicodeScalars.count` materializes the **entire** state JSON (up to the 60 KB cap, and beyond before rejection) into a String, walks it again to count scalars, then throws it away — every single request. Same anti-pattern as J4 but at a *new, per-request* site (J4 was `jsonCharLen`, load-time). The same request then re-serializes `state` again in `encodeItem` (Engine.swift:232) — 2 full serializations per structured-state request. | Implement J4's counting writer (`writeCounting(_ v: inout Int)`) and use it here: one recursive pass, zero allocation, exact Python `len(json.dumps(...))` char count. Same writer also serves `checkResponseSize` (LayaAPI.swift:349, `.utf8.count` of a full serialize — there the string is likely needed for the socket anyway, so only the *cap-rejection* path benefits). | Removes one O(state-size) allocation + walk per request; for 60 KB states that's ~60 KB churn + ~0.1–0.3 ms CPU per request — i.e. ~1–1.5% of the 19.5 ms budget recovered per request at high QPS. |
+| E3 | **MED** | `matchSlate` Engine.swift:257–265, call sites 314/316 | Per **unrouted choice question**: `Set(criteria.keys ?? [])` allocates a `Set<String>` (SipHash per key), then compares against **three fresh Set literals** — `["allow","ask_user","block"]` etc. are `ExpressibleByArrayLiteral`-built *inside the comparison*, so every call allocates 3 Sets and SipHashes ~13 more strings; `question()` can call `matchSlate` **twice** (314 and 316) for one question. ~4 Set allocations + ~20 SipHashed string hashes per choice request to decide one of 4 strings. | (a) Hoist the three vocabularies to `private static let` Sets (one build per process); (b) better, skip Sets entirely: slates are tiny (2–7 keys) — compare sorted key arrays against static sorted `[String]` constants (`keys.sorted() == staticSorted`, one array alloc, string `==` no hashing), or a single pass `allSatisfy` membership against a `StaticString`-keyed switch. Also collapse the double call: compute `matchSlate` once, reuse at 316. | ~4 allocations + ~20 string hashes → 1 sort of ≤7 keys per choice request; sub-100 ns saved per request, but it's pure overhead in the queue-latency tail at high QPS. |
+| E4 | **MED** | `checkAuth` LayaAPI.swift:66–81 + `constantTimeEquals` 84–93 + `Naming.resolve` Naming.swift:83–99 | Every request re-resolves the auth secret from scratch: `Naming.envAlias("TOKEN")` → `resolve` walks `ProcessInfo.processInfo.environment` lookups (Foundation env-dict access), then takes `Naming.lock` (NSLock) and **writes `_resolved`** (a dictionary mutation under the lock) on every request — shared mutable state on the per-request path. Then the header is re-parsed (`split` allocates `[Substring]`, `lowercased()` allocates, `trimmingCharacters` allocates) and `constantTimeEquals` materializes `Array(a.utf8)` **and** `Array(b.utf8)` — 2 array copies per compare. ~6–7 allocations + 1 lock + env-dict probe per request before any real work. | Resolve `TOKEN` **once** at server/engine startup into a `let expected: [UInt8]?` (env is immutable for the process lifetime; Naming's divergence-once semantics already imply snapshot-once). Compare over `String.UTF8View` directly: `zip(a.utf8, b.utf8)` with length folded into `diff` — UTF-8 views of contiguous (ASCII, hex-token) Strings are contiguous; or compare the already-ASCII bytes without `Array()`. Header parse: hand-scan the one space instead of `split`, `utf8.elementsEqual("bearer".utf8)` case-insensitive compare instead of `lowercased()`. | Auth path: ~7 allocations + lock + env probe → ~0 allocations, lock-free. ~0.5–1 µs/request — negligible vs 19.5 ms single-flight, removes a shared-lock serialization point at high QPS. |
+| E5 | **MED** | `runPass` output path 405–414 + `toFloat64Array` 438–459 | Per pass, output extraction allocates **four** `[Double]`s and copies twice: `logits = [Double](repeating:0,count:Kmax)` (405) is immediately replaced by `Array(arr.prefix(Kmax))` (410) — the zero-fill is pure waste; `toFloat64Array` itself allocates the full `count`-element `[Double]` (445) and then `prefix` copies a second time; `act` pays the same double-alloc (406/414). Also `toFloat64Array` converts **all** `count` elements when the caller reads ≤ Kmax (logits) or 2 (act). | Destination-passing: `func writeFloat64Prefix(into buf: inout [Double], max: Int)` — one `withUnsafePointer` loop that converts only `min(count, max)` elements into the caller's preallocated buffer (no `repeating:0` fill, no prefix copy). The 2-element act case reduces further to two loads + one `exp` (see E7). If CoreAI's `NDArray` allows `withUnsafeBytes` on the *output* view without a copy, convert directly into a reused `[Double]` stored on the actor (single-owner, safe post-`await`). | Removes ~3 allocations + ~2 full copies per pass (logits 1 KB f64 + act); ~2–4 µs/request. Small vs 19.5 ms but it's 100% avoidable churn in the one path every request takes. |
+| E6 | **MED** | `encodeItem` Engine.swift:232 | `String(JSONValue.serializeSorted(state).prefix(900))` serializes the **whole** state (up to 60 KB, per E2's cap) with recursive key-sorting at every object level, then truncates to 900 characters. Only the first 900 chars of the dumps output are ever tokenized, and JSON dumps has the prefix property (a bounded writer emitting sorted pairs in order can stop at 900 scalars; the discarded tail can't influence the kept prefix). Note the *sort* must stay whole-object (Python sorts then dumps), but the *writer* can stop early. | Bounded writer variant of `write`: `write(_ v:, to: &out, cap: 900)` with an early-`return` once `out.unicodeScalars.count >= 900` (check per node, not per scalar, to keep it cheap); pairs still sorted before emitting so order is exact. For the common small-state case the cap never fires — zero behavior change; for 60 KB states it cuts the serialize to ~1.5% of its output. | Structured-state requests: −~60 KB allocation + −most of the serialize/sort-walk time per request (the *sort* of top-level pairs is O(n log n) regardless — a secondary win is skipping subtree emission past the cap, which skips nested sorts entirely). |
+| E7 | **LOW** | `decide` 356–368 + `softmax` 419–427 | Three throwaway `[Double]` allocations per decision: `z` (356), `softmax`'s internal `e` (421) — `z` dies unread after one use — and `Engine.softmax([act[0], act[1]])` (368) which heap-allocates a 2-element array **plus** its 2-element result to compute one scalar. | Fuse: scale `z` in place then softmax **in place** (max pass, exp in place, sum, divide in place) — one allocation instead of two. `actP` is exactly `1/(1+exp(act[0]-act[1]))` — a scalar `exp`, zero allocations, bit-identical to the 2-element softmax (same max-subtraction algebra: `exp(a0-m)/(exp(a0-m)+exp(a1-m))` ≡ sigmoid(a1−a0); verify ≤1 ULP drift against golden corpus once). | −3 allocations + −1 array copy per decision; ~0.5 µs. Free. |
+| E8 | **LOW** | buffer fill loops `decide` 343–349; `runPass` 394–395 | Per request, the four persistent buffers are re-filled **elementwise with bounds checks over the full padded length**: ids+att for `n` content *and* `Lmax−n` pad (up to 2048 Int32 stores), mpos+mmask up to 256 more — ≈2.3k checked stores even when `n` barely moves between requests. `qtArr`/`hiArr` (394–395) are fresh 1-element `[Int32]` allocations per call purely to feed `NDArray.View(span:)`. | (a) Track `lastN`/`lastK` on the actor: only the *changed* regions need writes — content `[0,n)` always (it's new), but the pad tail `[n, Lmax)` is already `padId`/0 wherever a previous request zeroed it: zero only `[n, max(n, lastN))` (clamp `Lmax`). With stable-length traffic the tail memset drops to ~0 stores. Use `withUnsafeMutableBufferPointer` + `assign(repeating:from:)`/`initialize(repeating:count:)` on the tail to get memset-class stores instead of per-index checked loops. (b) Make `qtBuf`/`hiBuf` persistent 1-element `[Int32]` actor properties (write `qtBuf[0] = qt`, borrow `qtBuf.span`) — kills 2 allocations/pass. | (a) −O(Lmax) stores/request in steady state (best case ~2k stores → ~n); (b) −2 allocations/pass. Combined maybe 1–3 µs/request; matters only as queue-tail filler at high QPS. |
+| E9 | **LOW** | `Engine.init` temps loop 116–141 | Load-time (one-shot, inside the ~5 s cold budget, so low urgency): per chain, `fileExists` **then** `contents(atPath:)` = 2 stat syscalls per candidate path (chain 0 checks `hp` too? no — guarded by `i != 0`, but chains 1..5 each probe up to 2 paths); `JSONValue.parse(d)` on the temp configs goes through `Data → String → Array(text.utf16)` (J1's triple-copy) for a ~200-byte file; `arr.map { Sequence.clampTemperature(...) }` (133) allocates a new `[Double]` per chain config. | Drop `fileExists` and rely on `contents(atPath:)` returning nil (one open attempt per path, no TOCTOU window either); the J1 UTF-8 parser fixes the rest when it lands. | −~10 stat syscalls, −6 small parses' copy overhead; one-shot, ~1–2 ms off engine-ready latency. |
+| E10 | **LOW** | `LayaOps.renormalize` LayaOps.swift:62–107 + `argmax` 111–115; `answerFromChoice` 155–158, `answerFromScore` 176–180 | Per choice/score answer: `rawMap: [String: Double]` + `vals: [String: Double]` built (SipHash per key), the ≤8-iteration residual loop re-`reduce`s `vals.values` (dict walk) and `.filter`s `movable` (allocation) per iteration, `argmax` does **2k dictionary lookups** (`vals[k]! > vals[best]!`) for k ≤ 128 keys, and `answerFromChoice` builds a **third** `map` dict over the same keys. All of this is index-addressable: the wire invariant (Engine.swift doc + spec §1) is `probs.keys == criteria.keys` *in order* — the dicts exist only to re-find by string what position already gives. | Positional rewrite: zip `keys` with `out.probs` by index (fallback to a dict **only if** a positional key mismatch is detected — one compare, no hashing on the happy path); mass/residual math on `[Double]`; argmax = one index loop, no hashing; return `keys.map { (key: $0, value: vals[i]) }` with `enumerated()`. | −3 `[String: Double]` dicts + −O(k) SipHash lookups per answer (k=7: ~50 hashed string lookups → 0); ~1–2 µs/answer. |
+| E11 | **LOW** | `decide` 335, 370 | `Date()` twice per request: `NSDate`-class allocation + wall-clock (non-monotonic — a wall-clock jump skews `latencyMs`/`meanLatencyMs`). Same technique as B3, at a per-request site. | `ContinuousClock().measure { }` around the body, or `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)` pair — zero allocation, monotonic. | −2 allocations/request; latency stats become monotonic-safe. |
+| E12 | **LOW (probe hygiene)** | laya-engine-probe main.swift:37, 44–45, 80 | Probe is cold-path (golden replay), so only hygiene: `Date()` for load timing (37/45); on mismatch `JSONValue.serialize(mapped)` fully serializes both docs for the diff print (80) — fine for a golden runner. One real note: the probe constructs **one** `Engine` and replays sequentially — it therefore *never exercises* the actor-serialization path E1 optimizes; a `--concurrent n` mode (n in-flight `question()` calls) would measure the queueing behavior E1 targets. | `async let`/TaskGroup fan-out mode printing p50/p99 end-to-end vs single-flight mean. | No product-path win; gives the regression signal E1's benefit needs. |
+
+### COW/actor-borrow verdict on `runPass` (asked explicitly — do not "fix")
+
+Engine.swift:390–393 (`let ids = idsBuf` …): these are **not element copies**.
+`[Int32]` assignment is a buffer-header retain (RC +1, ~2 ns each); the
+element data is shared with the actor's storage. The bindings exist to pin the
+four buffers' lifetime across `await fn.run` (the `NDArray.View(span:)`s borrow
+them, ~Escapable). Deleting them and borrowing `self.idsBuf.span` directly
+across the await is a **compile-time exclusivity error** (actor `self` is
+mutable across suspension), and `withExtendedLifetime` cannot span an await
+either. Actor serialization is what makes the *shared* storage safe against a
+concurrent writer; the let-retains are what make it safe against a concurrent
+*free*. **Verdict: keep as-is; the only sanctioned micro-change is switching
+the four buffers to `ContiguousArray`** (drop the per-subscript element
+existence-class check in the E8 fill loops; the `span` property and
+`NDArray.View(span:)` accept it unchanged; no element-copy cost at the
+boundary since `View` borrows).
+
+### Already fine — do not re-flag
+
+- **Actor as the single serialized worker** (Engine.swift:21): queueing on the
+  actor *is* the design (one ANE specialization, one in-flight pass); E1
+  overlaps *around* it, it is not itself a defect.
+- **`question` → `decide` same-actor call chain** (323): no actor hop —
+  re-entrancy into an already-executing actor method is a direct call. Only
+  the *request entry* (`await engine.question`) pays one hop (~50–100 ns).
+- **`probs.reserveCapacity`** (374) and `Engine.round4` scalar math (429).
+- **`outputs.remove("logits")`/`remove("act")`** (408/412): moves the NDArray
+  box out of the outputs dict — no payload copy (same note as P5).
+- **`temps` precomputed at init into `[ChainTemps]`** indexed by chain
+  (353–355): per-request cost is one array index + one small dict probe;
+  correct place to pay for it.
+- **`JSONValue.obj(...)` literal builders** in `question`/`encodeItem`
+  (288–313): variadic array + pair array allocation per request, but the
+  semantic content is genuinely per-request; caching would change semantics.
+  (The `prefix(120)` criterion rendering 213–217 is likewise required by the
+  port spec.)
+- **`LayaAPI.validateAnswers` Set bookkeeping** (326–329): two small Sets per
+  request; answers count is small; not worth touching.
+- **Probe `JSONValue.parse` of golden file** (32–33): one-shot; J1 applies
+  whenever it lands.
+
+### E-priority summary
+
+| Rank | ID | One-line | Est. win |
+|------|----|----------|----------|
+| 1 | E1 | nonisolated encode stage → CPU tokenize overlaps GPU pass | +5–15% queue throughput |
+| 2 | E2 | counting writer for `stateChars` (kills full serialize per request) | −1 serialize+walk of ≤60 KB per request |
+| 3 | E6 | cap-900 bounded `serializeSorted` writer | −~98% of state serialize bytes on big states |
+| 4 | E3/E4 | hoisted matchSlate vocabularies + startup-snapshotted auth | zero alloc/hash on auth+routing prologue |
+| 5 | E5/E7/E8 | output-prefix conversion, in-place softmax + sigmoid actP, incremental pad zeroing | −~8 allocs + −~2k stores per request |
+| 6 | E9–E12 | load-time stats, Date→monotonic clock, positional renormalize, probe concurrency mode | µs-scale / measurement |
+
+**Measurement note:** single-flight, every E-item is ≤1% of the 19.5 ms pass
+and unmeasurable individually; E1/E2/E6 only show up in **queued** throughput.
+The probe's `--concurrent` mode (E12) is the prerequisite for validating E1's
+claim, and `meanLatencyMs` (E11) becomes the p50 signal once monotonic.

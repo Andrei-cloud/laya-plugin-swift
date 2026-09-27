@@ -1,0 +1,12 @@
+{
+  "impl": "laya-core tokenizer (swift)",
+  "load_seconds": 0.769,
+  "texts": 62,
+  "total_chars": 11136,
+  "median_pass_s": 0.001573,
+  "best_pass_s": 0.001525,
+  "tokens_per_s_median_pass": 1495791,
+  "chars_per_s_median_pass": 7079616,
+  "short_text_us": 7.0,
+  "long_text_us": 1096.0
+}

@@ -254,13 +254,17 @@ public actor Engine {
 
     /// Heuristic slate→head matcher for choice questions whose task the
     /// caller did not pin. Exact-set match; foreign slates → "base".
+    /// E3: vocabularies hoisted to process-lifetime statics (the Set
+    /// literals used to be rebuilt per call, twice per unrouted question).
+    private static let slateGuardrail: Set<String> = ["allow", "ask_user", "block"]
+    private static let slateTriage: Set<String> = ["reply", "act"]
+    private static let slateLang: Set<String> = ["ar", "en", "es", "hi", "ja", "ru", "zh"]
+
     public func matchSlate(_ criteria: JSONValue) -> String {
         let names = Set(criteria.keys ?? [])
-        // guardrail/triage/lang use fixed vocabularies
-        if names == ["allow", "ask_user", "block"] { return "guardrail" }
-        if names == ["reply", "act"] { return "triage" }
-        // ft_lang was trained on exactly this 7-ISO-code slate
-        if names == ["ar", "en", "es", "hi", "ja", "ru", "zh"] { return "lang_route" }
+        if names == Self.slateGuardrail { return "guardrail" }
+        if names == Self.slateTriage { return "triage" }
+        if names == Self.slateLang { return "lang_route" }
         return "base"
     }
 
@@ -355,7 +359,14 @@ public actor Engine {
             ?? tp.temperature[min(item.qtype, 2)]
         var z = [Double](repeating: 0, count: k)
         for i in 0..<k { z[i] = logits[i] / max(tScale, 1e-6) }
-        let p = Engine.softmax(z)
+        // E7: softmax in place over z (z is dead after this) — same
+        // max/exp/sum/divide op order as Engine.softmax, zero extra alloc.
+        var zm = -Double.infinity
+        for i in 0..<k { zm = max(zm, z[i]) }
+        var zs = 0.0
+        for i in 0..<k { z[i] = Foundation.exp(z[i] - zm); zs += z[i] }
+        if zs > 0 { for i in 0..<k { z[i] /= zs } }
+        let p = z
 
         // names: choice -> criteria keys; noul -> ["no","yes"]
         let names: [String] = item.q["t"]?.stringValue == "choice"

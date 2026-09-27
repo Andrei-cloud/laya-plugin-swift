@@ -9,21 +9,43 @@ Protocol (identical both sides, `Scripts/bench_tokenizer_py.py` and
 11,136 chars — engine-realistic question heads + one ~8 KiB state body),
 3 warm-up passes, 10 timed passes, median-of-3 independent reps reported.
 
-| impl   | pass ms | short text µs | 8 KiB text µs | chars/s |
-|--------|--------:|--------------:|--------------:|--------:|
-| python |   1.593 |          11.8 |         825.7 | 6,989,671 |
-| swift  |   1.089 |           5.0 |         742.0 | 10,224,993 |
+## B1 correction (bench validity)
 
-**Swift gains: 1.46× overall, 2.36× on short texts (the question-head regime
-the engine tokenizes per question), 1.10× on the long state body.**
-Tokenizer.json load is also ~3× faster (1.0 s vs 3.0 s, which includes the
-Python import machinery).
+The original table below compared Swift **warm-cache** against Python's
+cache-less Rust core — the 65k-entry chunk cache made passes 2–10 dictionary
+probes, not BPE. That inflated every Swift number (the "1.46× overall /
+1.10× long" claims do not survive). The bench now reports `cold`
+(cache-bypassed, honest BPE work) and `warm` (steady-state serving with
+cache) separately; the Python column is cache-less by nature.
+
+## Honest numbers (post-optimization, 2026-09-27, OPTIMIZATION.md T1-T11 applied)
+
+| impl | cold pass ms | cold tok/s | short µs | long (8 KiB) µs | load s |
+|------|-------------:|-----------:|---------:|----------------:|-------:|
+| python (Rust core) | 1.633 | 1,437,362 | 11.8 | **860.7** | 2.323 |
+| swift OLD (ad0c611, cold) | 1.573 | 1,495,791 | 7.2 | 1105.1 | 0.769 |
+| swift NEW (cold) | **1.470** | **1,592,349** | **6.4** | 1029.0 | **0.751** |
+| swift NEW (warm, serving) | 1.287 | 1,826,407 | 5.7 | 920.1 | — |
+
+Swift OLD→NEW (cache-bypassed, same corpus): **−6.6 % pass, +6.5 % tok/s,
+−11 % short, −7 % long, −2 % load.** All gains from T1 (span scan, fused
+tail move, carried newId), T2 (PairRankTable open-addressing rank map),
+T3/T4 (scalar/byte tables), T6/T10/T11 (cache eviction + reserves),
+S1–S5 (Sequence guards). Wire parity re-verified 15/15 after every step.
+
+Swift NEW vs python (cold-vs-native): **+11 % overall, 1.84× on short texts**
+(the question-head regime — per-call FFI/dict overhead on the Python side),
+**−16.5 % on the 8 KiB body** — the honest loss the old inflated table hid:
+Python's Rust BPE merge scheduler beats the parity-frozen one-merge-per-pass
+re-scan (O(n²) in chunk length) on long chunks. Swift load 3.1× faster.
+
+Raw runs: `golden/bench_runs/{old,new,oldcold,py}_*.json`.
 
 Why short texts win big: the Python side pays FFI + dict-wrapping per call
 (`tok(t)["input_ids"]`); the Swift side is a direct in-process call, and the
-added-token bucket index + first-char chunk cache avoid the regex pre-tokenizer
-scan entirely. Long texts converge (1.10×) because both are dominated by the
-same greedy-BPE work.
+added-token bucket index + chunk cache avoid the regex pre-tokenizer scan
+entirely. Long texts no longer "converge" once the cache is bypassed — the
+Rust merge scheduler is genuinely faster on long chunks (see table).
 
 Parity (the precondition for the comparison to mean anything): the Swift
 tokenizer is **byte-identical** to the installed one on 4,021 corpus strings +
