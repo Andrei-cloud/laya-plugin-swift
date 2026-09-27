@@ -152,7 +152,7 @@ file's own arithmetic is cold.
 | 2 | T2 | trivial hasher + packed value for `rank` | ~2× merge-scan lookups | ✅ applied as `PairRankTable` (open addressing; Swift's `Hasher` is a concrete struct — no Dictionary-shim exists); included in −6.6% |
 | 3 | T1 | span-based merge scan + fused tail move + carried newId | 1.5–2.5× merge phase | ✅ applied (withUnsafeBufferPointer + replaceSubrange + carried newId) |
 | 4 | B1/B2 | bench cache-bypass mode + precomputed lengths | valid A/B numbers | ✅ applied — old claims corrected in golden/BENCH.md (1.46×/1.10× were cache-inflated; honest cold: +11% overall, 1.84× short, −16.5% long vs python) |
-| 5 | T5/T7 | scalar-ranges-through-pipeline + lock removal | 20–35% encode overhead | ⏳ open |
+| 5 | T5/T7 | scalar-ranges-through-pipeline + lock removal | 20–35% encode overhead | ✅ T5 applied (range pipeline; String chain kept as differential oracle) — **2.3× cold pass, long-text −16.5% → +103% vs python**; T7 open |
 | 6 | J1 | UTF-8/mmap parser for the 34 MB load | load RSS −~100 MB, −30–50 ms | ⏳ open |
 | 7 | P1/P2 | AIModelCache(persistent) + L_max-padded persistent buffers | 5.2 s cold → sub-s; no per-shape re-specialization | ✅ P2 done (Engine persistent buffers); P1 open |
 | 8 | T4 | byte-fallback 256-entry table | kills `String(format:)` in fallback | ✅ applied (`byteTok[256]`; note: `<0xNN>` keys are **6** bytes — a 5-byte guard silently broke byte fallback once, caught by parity corpus) |
@@ -166,9 +166,13 @@ radius if implemented sloppily. **Enforced in practice:** the T4 5-vs-6-byte
 bug and a dropped normalize loop were both caught by this gate before commit.
 
 **Cross-benchmark result of the applied set (cold = cache-bypassed, median of
-3 runs, `golden/bench_runs/`):** OLD(ad0c611)→NEW −6.6 % pass ms, +6.5 %
+3 runs, `golden/bench_runs/`):** OLD(ad0c611)→NEW −6.6 % pass, +6.5 %
 tok/s, −11 % short-text, −7 % long-text, −2 % load; vs python cold +11 %
 overall / 1.84× short / −16.5 % long (honest loss, see BENCH.md).
+**Superseded by the T5/heap/flat round (same day):** cold 0.641 ms —
+2.55× vs python overall, 4.1× short, 2.0× long; no metric regressed vs any
+previous Swift version (BENCH.md "T5/heap/flat round"). Differential gates:
+heap≡scan AND range-pipeline≡legacy-chain, both on the 4021-string corpus.
 
 ---
 

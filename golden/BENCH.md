@@ -39,6 +39,38 @@ Swift NEW vs python (cold-vs-native): **+11 % overall, 1.84× on short texts**
 Python's Rust BPE merge scheduler beats the parity-frozen one-merge-per-pass
 re-scan (O(n²) in chunk length) on long chunks. Swift load 3.1× faster.
 
+## T5/heap/flat round (same day) — long-text loss REVERSED
+
+Three algorithm upgrades, each differential-proven equivalent before
+measuring (TokenizerDifferentialTests: heap≡scan on corpus + long synthetic
+texts; range pipeline≡legacy chain on the full corpus):
+
+1. **T5 range pipeline** — encode carries ONE `[UInt32]` scalar-value array
+   through added-token split → metaspace fold → merge; zero per-chunk
+   String materialization (this was the real long-text cost, not the merge
+   loop).
+2. **T3 flat table** — `scalarFlat[0x110000]` array probe replaces the
+   integer-key Dictionary (Swift SipHashes even integer keys).
+3. **Linked-list + min-heap merge** (HF Rust tokenizers' algorithm, exact
+   parity semantics: order key `(rank<<32 | originalIndex)` encodes
+   lowest-rank-ties-leftmost-in-current-order; stale entries validated on
+   pop) — engages at ≥12 symbols.
+
+| impl | cold pass ms | cold tok/s | short µs | long (8 KiB) µs |
+|------|-------------:|-----------:|---------:|----------------:|
+| python (Rust core) | 1.633 | 1,437,362 | 11.8 | 860.7 |
+| **swift (cold, final)** | **0.641** | **3,682,197** | **2.9** | **425.0** |
+
+**Swift vs python: 2.55× overall, 4.1× short, 2.0× long.** The −16.5 %
+long-text regression is gone and inverted to +103 %.
+
+*Cache inversion note:* cold now beats warm (0.641 vs 0.756 ms) — with
+array-indexed probes, cache key-building + lookup costs more than
+recompute on this corpus. The cache stays (production requests repeat
+question-head chunks across calls; the bench corpus is smaller than the
+working set that makes it pay), but it is no longer load-bearing: any
+future claim must quote the cold number.
+
 Raw runs: `golden/bench_runs/{old,new,oldcold,py}_*.json`.
 
 Why short texts win big: the Python side pays FFI + dict-wrapping per call

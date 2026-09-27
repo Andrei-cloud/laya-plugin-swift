@@ -1,0 +1,17 @@
+{
+  "impl": "laya-core tokenizer (swift)",
+  "load_seconds": 0.8,
+  "texts": 62,
+  "total_chars": 11136,
+  "mode": "cold+warm",
+  "median_pass_s_cold": 0.000641,
+  "best_pass_s_cold": 0.000602,
+  "median_pass_s_warm": 0.000756,
+  "tokens_per_s_cold": 3682197,
+  "tokens_per_s_warm": 3122647,
+  "chars_per_s_cold": 17373171,
+  "short_text_us_cold": 3.0,
+  "long_text_us_cold": 433.1,
+  "short_text_us_warm": 3.4,
+  "long_text_us_warm": 518.0
+}

@@ -11,7 +11,7 @@ import Foundation
 /// SECURITY RULE (binding, mirrors the Python module): secret values
 /// (SECRET_KEYS) are NEVER logged, warned, or reported — presence/source/
 /// length only.
-enum Naming {
+public enum Naming {
     static let aliasTable: [String: [String]] = [
         "ROUTING_CONFIG": ["LAYA_ROUTING_CONFIG", "JEV_ROUTING_CONFIG"],
         "LADDER_STATE": ["LAYA_LADDER_STATE", "JEV_LADDER_STATE"],
@@ -28,7 +28,7 @@ enum Naming {
     static let secretKeys: Set<String> = ["API_KEY", "TOKEN"]
 
     /// Echoed when a client sends no model; strict clients compare the echo.
-    static let defaultModel = "laya-r15"
+    public static let defaultModel = "laya-r15"
 
     // MARK: module state (tests reset via resetState())
 
@@ -99,7 +99,7 @@ enum Naming {
     }
 
     /// THE env read for the Laya surface.
-    static func envAlias(_ name: String, default def: String? = nil) -> String? {
+    public static func envAlias(_ name: String, default def: String? = nil) -> String? {
         let (value, _) = resolve(name)
         return value ?? def
     }
@@ -108,7 +108,7 @@ enum Naming {
 
     /// Echo non-empty strings VERBATIM; canonical default when nil/empty is
     /// env alias MODEL else `laya-r15`.
-    static func modelId(_ requested: String?) -> String {
+    public static func modelId(_ requested: String?) -> String {
         if let r = requested, !r.isEmpty { return r }
         return envAlias("MODEL") ?? defaultModel
     }

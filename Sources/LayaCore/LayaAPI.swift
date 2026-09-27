@@ -9,7 +9,7 @@ import Foundation
 public enum LayaAPI {
     static let questionTypes: Set<String> = ["choice", "score", "noul"]
 
-    static let maxStateChars = 60_000
+    public static let maxStateChars = 60_000
     static let maxResponseBytes = 1_000_000
 
     // Tolerances the caller's validators enforce — satisfied by construction.
@@ -41,6 +41,9 @@ public enum LayaAPI {
         public let code: String
         public var detail: String? = nil
         public var invariant: String? = nil
+        public init(code: String, detail: String? = nil, invariant: String? = nil) {
+            self.code = code; self.detail = detail; self.invariant = invariant
+        }
         public var description: String {
             invariant == nil ? code : "\(code): \(invariant!)"
         }
