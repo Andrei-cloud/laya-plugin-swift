@@ -41,7 +41,7 @@ public indirect enum JSONValue: Equatable, Sendable, ExpressibleByStringLiteral 
     // MARK: lookup / construction helpers
 
     public static func object(_ pairs: [String: JSONValue], order: [String]) -> JSONValue {
-        .object(order.compactMap { k in pairs[k].map { (key: k, value: $0) } })
+        object(order.compactMap { k in pairs[k].map { (key: k, value: $0) } })
     }
 
     /// Ordered-object factory for literals: `obj("a", .string("x"), "b", .int(1))`
@@ -594,6 +594,217 @@ private extension UInt16 {
             case let x where (UInt16(ascii: "0")...UInt16(ascii: "9")).contains(x): d = x - UInt16(ascii: "0")
             case let x where (UInt16(ascii: "a")...UInt16(ascii: "f")).contains(x): d = x - UInt16(ascii: "a") + 10
             case let x where (UInt16(ascii: "A")...UInt16(ascii: "F")).contains(x): d = x - UInt16(ascii: "A") + 10
+            default: return nil
+            }
+            v = v &* 16 &+ d
+        }
+        self = v
+    }
+}
+
+// MARK: - UTF-8-native scanner (J1)
+//
+// The UTF-16 parser above is the ORACLE: the wire layer keeps using it
+// (String payloads go through it; lone-surrogate glue semantics are
+// gated by tests). The 34 MB tokenizer.json never goes through it any
+// more — parse(_ data:) below re-encoded Data->String->Array(utf16)
+// (3 full copies, ~250 MB peak RSS on a cold one-shot load). This
+// scanner walks the bytes of the mapped Data directly and materializes
+// only the Strings the tree keeps.
+//
+// Semantics notes:
+//   - JSON structural bytes are ASCII; a UTF-8 byte scan is exact.
+//   - \u escapes: a well-formed surrogate PAIR re-encodes to the same
+//     scalar; a LONE surrogate encodes as CESU-8 bytes and then
+//     U+FFFD-substitutes at String(decoding:) — the UTF-16 oracle keeps
+//     the raw surrogate instead. tokenizer.json contains none (checked
+//     by the differential test below); if one ever appears, the
+//     vocab-key equality test fails loudly.
+public extension JSONValue {
+    static func parse(_ bytes: [UInt8]) -> JSONValue? {
+        var p = JSONUTF8Parser(bytes)
+        p.skipWS()
+        guard let v = p.parseValue() else { return nil }
+        p.skipWS()
+        return p.peekIsEOF() ? v : nil
+    }
+
+    /// J1: mmap the file instead of reading it — the pages fault in
+    /// lazily and stay in the OS page cache across processes (the CLI
+    /// is one-shot: the next launch pays zero for a warm cache).
+    static func loadFile(_ path: String) throws -> JSONValue? {
+        let url = URL(fileURLWithPath: path)
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        return data.withUnsafeBytes { parse([UInt8]($0.bindMemory(to: UInt8.self))) }
+    }
+}
+
+struct JSONUTF8Parser {
+    let text: [UInt8]
+    var pos = 0
+
+    init(_ text: [UInt8]) { self.text = text }
+
+    mutating func skipWS() {
+        while pos < text.count {
+            switch text[pos] {
+            case 0x20, 0x09, 0x0A, 0x0D: pos += 1
+            default: return
+            }
+        }
+    }
+
+    func peekIsEOF() -> Bool { pos >= text.count }
+
+    mutating func parseValue() -> JSONValue? {
+        skipWS()
+        guard pos < text.count else { return nil }
+        switch text[pos] {
+        case 0x7B: return parseObject()   // {
+        case 0x5B: return parseArray()    // [
+        case 0x22: return parseString().map { JSONValue.string($0) }
+        case 0x74: return lit("true") ? .bool(true) : nil
+        case 0x66: return lit("false") ? .bool(false) : nil
+        case 0x6E: return lit("null") ? .null : nil
+        default: return parseNumber()
+        }
+    }
+
+    private mutating func lit(_ s: String) -> Bool {
+        guard pos + s.utf8.count <= text.count else { return false }
+        for b in s.utf8 {
+            guard text[pos] == b else { return false }
+            pos += 1
+        }
+        return true
+    }
+
+    mutating func parseObject() -> JSONValue? {
+        pos += 1 // {
+        var pairs: [(key: String, value: JSONValue)] = []
+        skipWS()
+        if pos < text.count, text[pos] == 0x7D { pos += 1; return .object(pairs) }
+        while true {
+            skipWS()
+            guard pos < text.count, text[pos] == 0x22, let k = parseString() else { return nil }
+            skipWS()
+            guard pos < text.count, text[pos] == 0x3A else { return nil }
+            pos += 1
+            guard let v = parseValue() else { return nil }
+            pairs.append((key: k, value: v))
+            skipWS()
+            guard pos < text.count else { return nil }
+            if text[pos] == 0x2C { pos += 1; continue }
+            if text[pos] == 0x7D { pos += 1; return .object(pairs) }
+            return nil
+        }
+    }
+
+    mutating func parseArray() -> JSONValue? {
+        pos += 1 // [
+        var arr: [JSONValue] = []
+        skipWS()
+        if pos < text.count, text[pos] == 0x5D { pos += 1; return .array(arr) }
+        while true {
+            guard let v = parseValue() else { return nil }
+            arr.append(v)
+            skipWS()
+            guard pos < text.count else { return nil }
+            if text[pos] == 0x2C { pos += 1; continue }
+            if text[pos] == 0x5D { pos += 1; return .array(arr) }
+            return nil
+        }
+    }
+
+    mutating func parseString() -> String? {
+        guard text[pos] == 0x22 else { return nil }
+        pos += 1
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(64)
+        while pos < text.count {
+            let c = text[pos]
+            if c == 0x22 { pos += 1; return String(decoding: bytes, as: UTF8.self) }
+            if c == 0x5C {
+                pos += 1
+                guard pos < text.count else { return nil }
+                switch text[pos] {
+                case 0x22: bytes.append(0x22)
+                case 0x5C: bytes.append(0x5C)
+                case 0x2F: bytes.append(0x2F)
+                case 0x62: bytes.append(0x08)
+                case 0x66: bytes.append(0x0C)
+                case 0x6E: bytes.append(0x0A)
+                case 0x72: bytes.append(0x0D)
+                case 0x74: bytes.append(0x09)
+                case 0x75:
+                    pos += 1
+                    guard pos + 4 <= text.count,
+                          let cp = UInt16(hex4b: text[pos..<(pos + 4)]) else { return nil }
+                    pos += 3 // +1 below lands past the 4 hex digits
+                    var scalar = UInt32(cp)
+                    if cp >= 0xD800 && cp <= 0xDBFF {
+                        // try to glue a following \uDC00-\uDFFF
+                        if pos + 6 <= text.count, text[pos + 1] == 0x5C, text[pos + 2] == 0x75,
+                           let lo = UInt16(hex4b: text[(pos + 3)..<(pos + 7)]),
+                           lo >= 0xDC00 && lo <= 0xDFFF {
+                            scalar = 0x10000 + ((UInt32(cp) - 0xD800) << 10) + UInt32(lo - 0xDC00)
+                            pos += 6   // consume the second escape too
+                        }
+                    }
+                    appendUTF8(scalar, to: &bytes)
+                default: return nil
+                }
+                pos += 1
+                continue
+            }
+            bytes.append(c)   // raw UTF-8 byte (multi-byte scalars pass through)
+            pos += 1
+        }
+        return nil
+    }
+
+    private func appendUTF8(_ v: UInt32, to bytes: inout [UInt8]) {
+        switch v {
+        case ..<0x80: bytes.append(UInt8(v))
+        case ..<0x800:
+            bytes.append(0xC0 | UInt8(v >> 6)); bytes.append(0x80 | UInt8(v & 0x3F))
+        case ..<0x10000:
+            bytes.append(0xE0 | UInt8(v >> 12))
+            bytes.append(0x80 | UInt8((v >> 6) & 0x3F)); bytes.append(0x80 | UInt8(v & 0x3F))
+        default:
+            bytes.append(0xF0 | UInt8(v >> 18))
+            bytes.append(0x80 | UInt8((v >> 12) & 0x3F))
+            bytes.append(0x80 | UInt8((v >> 6) & 0x3F)); bytes.append(0x80 | UInt8(v & 0x3F))
+        }
+    }
+
+    mutating func parseNumber() -> JSONValue? {
+        let start = pos
+        if pos < text.count, text[pos] == 0x2D { pos += 1 }
+        var isDouble = false
+        while pos < text.count {
+            let c = text[pos]
+            if c >= 0x30 && c <= 0x39 { pos += 1; continue }
+            if c == 0x2E || c == 0x65 || c == 0x45 || c == 0x2B || c == 0x2D { isDouble = true; pos += 1; continue }
+            break
+        }
+        guard pos > start else { return nil }
+        let s = String(decoding: text[start..<pos], as: UTF8.self)   // pure ASCII
+        if !isDouble, let i = Int64(s) { return .int(i) }
+        guard let d = Double(s) else { return nil }
+        return .double(d)
+    }
+}
+
+private extension UInt16 {
+    init?(hex4b: ArraySlice<UInt8>) {
+        var v: UInt16 = 0
+        for b in hex4b {
+            let d: UInt16
+            switch b {
+            case 0x30...0x39: d = UInt16(b - 0x30)
+            case 0x61...0x66: d = UInt16(b - 0x61) + 10
+            case 0x41...0x46: d = UInt16(b - 0x41) + 10
             default: return nil
             }
             v = v &* 16 &+ d

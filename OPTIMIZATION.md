@@ -285,3 +285,167 @@ object-state differential probe: python :11270 == swift :11370 byte-exact.
 **Rule for this port: any Python `json.dumps` must be read for its
 ensure_ascii/separators kwargs before being mirrored — never assume one
 flavor serves all sites.**
+
+---
+
+## Use-case rails review (2026-09-27) — UseCases.swift + RemoteEngine.swift + Rows.swift
+
+Scope: `Sources/LayaCore/UseCases.swift`, `Sources/laya/RemoteEngine.swift`,
+`Sources/laya/Rows.swift` (U-findings only; T/J/S/B/P/E items not re-flagged).
+Axes: memory, CPU, allocation churn, Swift-language techniques (UTF8View vs
+Character iteration, regex recompilation/caching, per-call Set/dict rebuilds,
+unnecessary copies, actor hops). **Sizing frame: the whole process is a
+one-shot CLI — engine load (~6 s) dominates everything; the 19.5 ms model
+pass lives in `Engine.swift` (out of scope).** Every cost below is therefore
+sub-millisecond at the actual call rate (per-invocation, or per-question for
+RemoteEngine); items are listed only because each is trivially fixable and/or
+records a Swift-idiom lesson, per this file's standing rule. All timings are
+measured on this machine (`swiftc -O`, ~2.5–3.6 KB mail-shaped strings), not
+estimated, and are called out inline.
+
+| # | Impact | Location | Finding | Concrete technique | Est. benefit |
+|---|--------|----------|---------|--------------------|--------------|
+| U1 | **LOW (trivial; named-axis lesson)** | `decodeForScreening` UseCases.swift:204, 228 | Both screening regexes are **recompiled per call** through `try? NSRegularExpression(pattern:)` — once per mail message. Measured: 65.9 µs compile+match vs 60.9 µs cached-match on a 2.5 KB mail → the recompilation itself is only ~5 µs because Darwin's `NSRegularExpression` carries a process-wide pattern cache; the *real* cost is the `try?`: a pattern that fails to compile silently disables base64/percent **screening** per message — fail-open on the privacy axis, invisible. | Hoist both to `private static let`, built `try!` exactly like `K.redactPatterns` (Constants.swift:89–100) — a broken pattern must crash at startup, not silently un-screen. | −~5 µs/mail message; kills the silent-screening-disable failure mode. Risk: none — patterns are constants, caching is semantics-preserving. |
+| U2 | **LOW (trivial)** | `scalarPrefix` UseCases.swift:23–34 | Code-point prefix via two full walks + per-scalar materialization: `s.unicodeScalars.count` (24) is O(n) over the whole string, then the loop re-materializes up to 2550 scalars one `append` at a time (28–32). Runs once per triage/mail/supervise row on the ≤2550-char capped state. Measured: **46.0 µs → 4.4 µs (10.4×)** for the fix below on a ~3.6 KB string. | UTF-8 lead-byte scan: walk `s.utf8`, count bytes with `(b & 0xC0) != 0x80`; when the count hits `n`, return `String(decoding: s.utf8[start..<i], as: UTF8.self)` — one contiguous copy, zero per-scalar work. UTF-8 code points ≡ Unicode scalars (no surrogates), so Python `str[:n]` parity is exact by construction. | −~42 µs/row; the recorded idiom lesson: `unicodeScalars` count+append vs UTF8View lead-byte scan. Risk: none (parity-exact); covered by any scalar-prefix golden. |
+| U3 | **LOW (trivial)** | `decodeForScreening` UseCases.swift:191–201 | URL-query strip materializes `Array(text)` — a `[Character]` grapheme-cluster array, the **most expensive String view in Swift** (boundary analysis per element) — for a scan that only needs code points (Python `re` works on code points). Plus per-character `stripped.append(chars[i])` into a zero-capacity String, and dead code `_ = chars` (201). Measured: 24.2 µs (`[Character]`) vs 17.9 µs (byte version *including its own extra `Array(utf8)` copy* — a direct view scan with run-appends drops below that). | Scan `text.utf8` by index; accumulate clean runs and append runs with `String(decoding: slice, as: UTF8.self)` / `append(contentsOf:)` instead of per-char dispatch. **Parity gate:** Python `\s` matches Unicode whitespace, so the byte fast-path may special-case only ASCII whitespace and must fall back to a scalar `isWhitespace` check for non-ASCII bytes ≥ 0xC2 (Character's grapheme semantics are *not* what the Python regex has). | −~10–15 µs/mail message; removes the largest single-view allocation in the mail rail. Risk: whitespace-set parity — gate against the Python `_decode_for_screening` corpus before landing. |
+| U4 | **LOW (trivial)** | `percentDecode` UseCases.swift:244–256 | Triple allocation storm per escape: `Array(s.unicodeScalars)` full copy (244), then **three Strings per `%XX`** — `UInt8(String(String(scalars[i+1]) + String(scalars[i+2])), radix: 16)` (249) — plus `String(sc)` per literal scalar (255). Measured 3.0 µs on a 255-byte all-percent span: trivial per call, textbook churn. | Hex digits by arithmetic on the ASCII bytes (`d &- 0x30` / `&- 0x37` with range guards, like J5's `hex4` fix); copy non-`%` runs in bulk from the scalar view without materializing the array. | −3 allocations per escaped byte; µs-scale. Risk: none — pure decode, golden-testable against `urllib.parse.unquote`. |
+| U5 | **LOW** | triage 108–125, mail 288–300, supervise 381–393 (UseCases.swift) | Every model question **rebuilds a byte-identical JSONValue payload per invocation**: `uq`/`kq` (with `levels.map` / `triageKindMeanings.map` String-boxing), the 4-entry `[(name, instruction)]` tuple-array literal (119–122), the lane/personal/action questions, and the noul template re-`JSONValue.obj`-built per name in the loops (123–125, 381–383). Counts: 6 payloads/triage, 3/mail, 5/supervise. `JSONValue` is `Sendable` (JSONValue.swift:10) → these are legal Swift 6 `static let`s. | Hoist to `private static let triageUrgencyQ`, `triageKindQ`, `mailLaneQ`, … ; the per-name noul questions become a static `[(name, JSONValue)]` table serving both the loop and the payload. | −~20 small allocations/invocation. Zero measurable wall-time on a 6 s process — recorded as the idiom lesson: static question payloads belong in statics, not per-call construction. Risk: none (immutable values). |
+| U6 | **LOW (trivial)** | `secretShaped` UseCases.swift:74–83 + call site 105 | Three regex passes over the *same* text per triage: `keyval` and `bearer` scanned in full (77–79, with a linear `first(where:)` name-scan of `K.redactPatterns` per name), then `Decisions.redact` (105) re-runs the same `bearer`/`keyval` patterns plus three more over the same string — the two `secretShaped` passes are pure duplicated scan for the non-secret (dominant) case. | One fused pass: run all five `K.redactPatterns` regexes once, collect matches; keyval/bearer hits feed `secret_shaped`, all matches feed the redact rebuild (a `redact(_:) -> (String, hits: Set<String>)` twin on the UseCases side; `Decisions.redact` itself stays as the shared entry). | −2 full regex passes/triage (tens of µs on 2.5 KB states — the largest measurable win in this review). Risk: must preserve redact's per-pattern *sequential* semantics (later patterns see earlier redactions) — fuse in the same pattern order, gate on the existing redact goldens. |
+| U7 | **LOW (trivial)** | mail UseCases.swift:282–283 | `screened.lowercased()` materializes a full ≤2550-char copy of the screened text solely to `contains` ten literal injection patterns. | Iterate `agentTargetedPatterns` with `screened.range(of: p, options: .caseInsensitive)` — no allocation on miss. **Parity gate:** `lowercased()` is Unicode full-lowercasing; `.caseInsensitive` uses *folding* (matches ß/ﬂ-class supersets) — verify against the Python `low = screened.lower()` corpus, or hand-scan ASCII-insensitive when the pattern is ASCII (all ten are). | −1 × ~5 KB allocation/mail message; µs-scale. Risk: case-folding superset matches — gated as noted. |
+| U8 | **LOW (trivial)** | `taskHint` RemoteEngine.swift:147–150 | Per **question** (up to 7 per supervise run once rails go remote): `Set((q["criteria"]?.objectPairs ?? []).map { $0.key })` allocates a Set + array + SipHashes every key, only to compare against two static Sets. `guardVocab`/`triageVocab` are already hoisted (26–27, good). | Criteria are ≤7 keys: `let keys = q["criteria"]?.objectPairs ?? []`, then `keys.count == 3 && keys.allSatisfy { guardVocab.contains($0.key) }` — or a count-guarded direct compare; zero Set-build, zero map allocation. | −2 allocations + ~7 string hashes/question; ns–µs scale. Risk: none (Set equality ≡ count+allSatisfy when vocab has distinct keys). |
+| U9 | **LOW (trivial)** | `chainFor` RemoteEngine.swift:162 | `let table = ["base": 0, "ft_lang": 1, …]` — a five-entry `[String: Int]` **dictionary literal rebuilt on every call**, i.e. per question (5–7/run), on an actor-isolated method: dict allocation + 5 String hashes each time. | `private static let chainTable: [String: Int]` (`[String: Int]` is Sendable — legal Swift 6 static). Better: `taskHint` only ever emits `"guardrail"/"triage"/"base"` — switch on those three strings and delete the table as dead generality. | −1 dict alloc + 5 hashes/question. Risk: none. |
+| U10 | **LOW (trivial)** | `rounded(toPlaces:)` RemoteEngine.swift:172–175 | `pow(10.0, Double(places))` recomputed per call; call sites: noul probs (119–120), `probs.map` **per probability** (140), conf (137) — up to ~12 `pow` calls per supervise question. | `private static let scale4 = 1e4` (places is always 4 at these sites): `(self * Self.scale4).rounded() / Self.scale4`. | `pow` is ~20–50 ns → ~0.5 µs/question; free. Risk: none (1e4 exact in binary FP, same result bits). |
+| U11 | **LOW** | `post` RemoteEngine.swift:50–53 + `question` 104 | Payload crosses **two full copies**: `JSONValue.serialize(payload)` builds the ≤2550-char-state JSON String, `Data(….utf8)` re-encodes it byte-for-byte (53). Plus `Naming.envAlias("TOKEN")` probed + `"Bearer \(token)"` interpolated **per POST** (50–51) and `envAlias("MODEL")` per question (104) — the E4 env-re-resolution anti-pattern at a new site. | Add `JSONValue.serializeToBytes(_:) -> [UInt8]` (the writer already appends scalars — encode straight into a byte buffer, one copy); snapshot token/model into `let` at `init` (env is immutable for the process lifetime — E4's exact argument). | −1 full-payload copy + −2 env probes/question. µs-scale on a one-shot CLI; recorded because it's E4's lesson re-appearing. Risk: none; wire bytes identical. |
+| U12 | **LOW (zero-cost fix)** | `question` RemoteEngine.swift:110–111 | `t0.duration(to: .now)` is invoked **twice** to assemble the ms figure — two separate clock reads feeding one metric (seconds from instant 1, attoseconds from instant 2) plus two `Duration` materializations. | `let d = t0.duration(to: .now)` once, then read `.components` off it. | Correctness-adjacent precision + one fewer clock read; free. Risk: none. |
+| U13 | **LOW (trivial)** | `readStdinJSON` Rows.swift:72–73 | `String(data:encoding:.utf8)` decodes the whole stdin buffer, then `.trimmingCharacters(in:)` makes a **second full copy** even when nothing needs trimming (typical stdin ends with a single `\n`, which still forces the copy path). One-shot per invocation, so µs-scale. | Trim ASCII whitespace bytes off `data` at the byte level first, then decode once. | −1 × stdin-size copy/invocation. Risk: none (byte-level trim of ASCII whitespace ≡ `str.strip()` for JSON input, which is ASCII-framed by the parser anyway). |
+
+### Already fine — do not re-flag
+
+- **Actor-hop budget on the rails** (Rows.swift:60 `holder.local()`, RemoteEngine's per-question entry from the nonisolated rail): one hop per call (~50–100 ns) against a 6 s process — at the *per-invocation* rate this is noise; the E-review's "actor hop cost" applies at per-request QPS, not here. `chainFor` awaited *inside* `question` is same-actor — direct call, no extra hop (same rule as `question → decide` in the E section).
+- **`Holder` one-shot lazy engine** (Rows.swift:22–45): builds once, caches `Engine` + `failed` flag; the `Opaque`/`@unchecked Sendable` write-once box is the correct Swift 6 strict-concurrency escape. No per-call cost after the first.
+- **`guardVocab`/`triageVocab`/`K.redactPatterns`/`K.urgencyLevels` statics** (RemoteEngine.swift:26–27, Constants.swift:73–100): already hoisted per-process — the U8/U6 fixes extend this established pattern rather than inventing one.
+- **`chains` cached behind first `/health`** (RemoteEngine.swift:154–159): exactly the startup-snapshot pattern E4 prescribes; `ContinuousClock.now` timing (108) already dodges B3's `Date()`/NSDate allocation.
+- **COW sharing of `state`** through `ask`/`.string(state)` (UseCases.swift:42) and `msg = message` (275): header retains, no element copies — same verdict as the Engine COW note.
+- **`stringForm`/`serialize(sortKeys: false)`** (335–338, 99): the ensure_ascii=False flavor is required by the port spec (see the E2/E6 trap note); do not "unify" the serialize flavors for the sake of dedup.
+- **Rows availability-gate duplication** across `TriageRow`/`MailRow`/`SuperviseRow.run()` (Rows.swift:120–124 etc.): a *style* dedup opportunity (`availabilityGate()` exists at 108 but isn't called by the three `run()`s) — out of scope for this review, recorded so a future reviewer doesn't re-file it as a perf finding.
+
+### U-priority summary
+
+| Rank | ID | One-line | Est. win |
+|------|----|----------|----------|
+| 1 | U6 | fuse secretShaped+redact regex passes | −2 regex passes/triage (largest measurable here) |
+| 2 | U2 | UTF-8 lead-byte scan in `scalarPrefix` | 10.4× measured, −42 µs/row |
+| 3 | U1/U3 | cached screening regexes + UTF-8 query strip | −~15 µs/mail msg + kills silent `try?` un-screening |
+| 4 | U5/U8/U9/U10/U11 | static payloads, no per-question Set/dict/pow/env/copy rebuilds | ~0 wall-time; the Swift-idiom lessons of this file set |
+| 5 | U4/U7/U12/U13 | hex arithmetic, caseInsensitive scan, single clock read, byte-first trim | µs-scale each; all parity-gated where noted |
+
+**Measurement note (honesty, per B1's lesson):** every U-item was timed in
+isolation on mail/triage-shaped strings; none is individually visible in
+end-to-end CLI wall time (engine load ~6 s ≫ the sum of all U-items, ~0.2 ms).
+The set is applied for correctness-adjacent failure modes (U1's silent
+`try?`), per-*message* scaling if these rails are ever embedded in a daemon
+loop (where U3/U6/U8 become the real wins at 10²–10³ msg/s), and the idiom
+record. Parity gates: U3 (Unicode `\s`), U7 (fold vs lower) — run against the
+Python `_decode_for_screening` / `mail_sort` goldens before landing.
+
+## Rows milestone (triage/mail/supervise) — two traps found by the differential
+
+The three §2 use-case rows (UseCases.swift + RemoteEngine.swift +
+Rows.swift) landed with a dual-engine differential gate
+(Scripts/diff_rows.py: same stdin through the Python CLI and the Swift
+CLI, both with the real engine env; --remote mode exercises the
+degraded RemoteEngine rail against the live daemon).
+
+**TRAP 1 — LAYA_ASSETS spelling.** engine.py:7 defines LAYA_ASSETS as a
+DIRECTORY containing laya-combined-f16.aimodel/ +
+combined_provenance.json. The Swift resolvePaths() treated it as the
+bundle FILE path, so every gate run silently degraded the Swift rows to
+the daemon rail — bodies looked healthy while the in-process engine
+never loaded (and Python's env, unset in the first gate runs, degraded
+Python to fail_open — degraded-vs-degraded "matches" everywhere).
+resolvePaths() now accepts both spellings; the gate prints the degraded
+note in sw-err so it can never hide again.
+Rule for this port: a degraded engine answers happily — every gate must
+assert the local engine actually loaded (grep the stderr note), not
+just that bodies match.
+
+**TRAP 2 — ANE compiler warning spam on STDOUT.** When the asset gets
+re-validated (fresh MPSGraph compile), CoreAI writes ~40 `warning:
+loc(fused[...ane_validation_message...]` lines to fd1 BEFORE the CLI's
+one-JSON-document. Python's engine.py docstring says "benign"; Python's
+own CLI emits them too (both sides polluted — differential still valid),
+but any harness that does json.loads(stdout) must strip to the first
+'{'. diff_rows.py does.
+
+**TRAP 2 amendment (2026-09-27, same day).** "Strip to the first `{`"
+is WRONG: the ANE/MPSGraph spam contains `{` of its own
+(`dictionary<{<"type" = ...>`), so the naive parse returned None on BOTH
+sides — and `None == None` scored a silent "MATCH" on 8/10 cases before
+the anomaly (`-> null` bodies) was noticed. diff_rows.py now parses from
+the LAST line-initial `{` (the CLI writes exactly one document to EOF
+after the spam) AND asserts the engine actually loaded per mode
+(local: neither side degraded; --remote: swift degraded, python oracle
+not). A null-vs-null match is now structurally impossible.
+
+## U-findings landing record (2026-09-27)
+
+Applied: U1 (static `try!` screening regexes — `try?` fail-open on the
+screening rail was the real bug, not the ~5 µs), U2 (UTF-8 lead-byte
+scalarPrefix, 46→4.4 µs), U4 (percentDecode index-scan + arithmetic hex;
+first iterator attempt swallowed a byte on failed-hex lookahead — the
+existing "100%zz done" test caught it in 40 s, index-scan landed),
+U5 (all 14 question payloads as static `Q` table), U8 (count-guarded
+taskHint, no Set/map alloc), U9 (static chainIndex), U10 (scale lookup,
+no pow per prob), U12 (single clock read per ms metric), U13 (byte-trim
+stdin with strict String(data:encoding:) semantics preserved — invalid
+UTF-8 still → `{}`), plus dead-code kills (`_ = chars`, unread `choice`).
+
+CRITICAL BUG caught while landing U1: the base64 pad formula
+`(-blob.count) % 4` ported from Python is WRONG in Swift — `%` is
+truncated (C-style), goes negative for len%4==1, and
+String(repeating:count:) traps "Negative count not allowed" (Python's
+floored % never does). Floored form `(4 - n % 4) % 4`. The DecisionsRedact
+test corpus hit it the moment a blob of length%4==1 was added — and the
+test's own expectation was ALSO wrong vs live Python (decoded b64 that is
+itself a URL gets query-stripped again; "promo=50%" never reaches the
+screening line). Both fixed against live-captured Python truth.
+
+Rule for this port: any Python `%` ported to Swift must be checked for
+floored-vs-truncated semantics (negative operands); any expectation in a
+parity test must be captured from the live Python, never reasoned about.
+
+Skipped (parity-risky, µs-scale — record only): U3 (byte-view query strip
+must reproduce Python `\s` Unicode-whitespace incl. U+2028/9, U+3000 —
+Character.isWhitespace has different semantics), U6 (redact fuse must
+preserve per-pattern sequential semantics), U7 (lowercased() vs
+.caseInsensitive folding superset), U11 (serializeToBytes + env snapshot;
+E4 lesson already recorded, revisit if rails ever embed in a daemon).
+
+## J1 landing — mmap + UTF-8-native tokenizer.json load (2026-09-27)
+
+The 34 MB tokenizer.json load copied the file three times
+(Data(contentsOf:) -> String(data:) -> Array(text.utf16), ~250 MB peak
+RSS on cold one-shot load). Now: `Data(options: [.mappedIfSafe])` +
+`JSONUTF8Parser` (JSONValue.swift) — a UTF-8-byte scanner that
+materializes only the Strings the tree keeps. Pages fault lazily and
+stay in the OS page cache across processes: a one-shot CLI's next launch
+pays zero re-read cost.
+
+Measured (measured inside the differential test, warm page cache):
+utf8-scan 0.906 s vs utf16-chain 1.303 s on the real file.
+
+The UTF-16 parser STAYS as the wire oracle (String payloads keep using
+it). Gate: testUTF8ParserMatchesUTF16Oracle (synthetic escapes, numbers,
+nesting, glued surrogate pair) + testUTF8ParserOnRealTokenizerFile
+(full structural == on the 34 MB file). DOCUMENTED ACCEPTED DIVERGENCE:
+a LONE surrogate — UTF-16 oracle keeps the raw code unit (Python len()
+parity), UTF-8 scanner U+FFFD-substitutes (CESU-8 dead end). tokenizer
+.json contains none; the full-file test is the tripwire. The lone case
+is asserted NotEqual on purpose so a future "fix" that silently
+converges them is visible.
+
+T7 (NSLock on chunk-cache probe) remains open by choice: the lock is
+one uncontended ~20 ns lock/unlock per chunk probe inside a path where
+each probe is already a dict lookup; single-owner redesign of the
+tokenizer would break the Sendable story for the Engine actor for no
+measurable win at 10^4 probes/s.

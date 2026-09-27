@@ -17,8 +17,13 @@ enum Decisions {
     /// (spec §4 privacy-before-send; we redact even local writes).
     static func redact(_ text: String) -> String {
         var out = text
-        let ns = out as NSString
         for (_, regex) in K.redactPatterns {
+            // ns MUST be recomputed per pattern: every replacement shrinks
+            // `out`, and searching with the pre-shrink length raises
+            // NSRangeException (out of bounds) the moment one pattern hits
+            // and a later one searches — dormant until the triage/mail
+            // rows started feeding email-bearing messages (2026-09-27).
+            let ns = out as NSString
             let matches = regex.matches(in: out, options: [], range: NSRange(location: 0, length: ns.length))
             guard !matches.isEmpty else { continue }
             var rebuilt = ""

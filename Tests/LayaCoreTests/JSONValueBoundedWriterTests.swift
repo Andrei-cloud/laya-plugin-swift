@@ -113,4 +113,58 @@ final class JSONValueBoundedWriterTests: XCTestCase {
         let fast = JSONValue.serializeSortedPrefix(v, maxScalars: 900)
         XCTAssertEqual(Array(fast.unicodeScalars), Array(naive.unicodeScalars))
     }
+
+    // MARK: - J1 differential: UTF-8-native scanner vs UTF-16 oracle
+
+    func testUTF8ParserMatchesUTF16Oracle() throws {
+        // Synthetic cases covering every escape branch, surrogate
+        // pairing, number forms, and nesting.
+        let cases = [
+            #"{"a":1,"b":-2.5,"c":1e10,"d":true,"e":false,"f":null}"#,
+            #""tab\tnl\nq\"r bs\\ sl/ b\b f\f""#,
+            #""é \u00e9 \uD83D\uDE00""#,           // escape + glued surrogate pair
+            #"[[],{},[[[]]],{"k":[{"":1}]}]"#,
+            #"{"neg0":-0,"exp":1E+2,"frac":0.5}"#,
+            "\"\"",
+        ]
+        for src in cases {
+            let a = JSONValue.parse(Array(src.utf8))
+            let b = JSONValue.parse(src)
+            XCTAssertEqual(a ?? .null, b ?? .null, "parser divergence on \(src)")
+        }
+        // DOCUMENTED divergence (accepted): a LONE surrogate — the
+        // UTF-16 oracle keeps the raw code unit (Python len() parity),
+        // the UTF-8 scanner U+FFFD-substitutes (CESU-8 dead end).
+        // tokenizer.json contains none; the full-file test is the gate.
+        let lone = #""a\uD800b""#
+        XCTAssertNotEqual(JSONValue.parse(Array(lone.utf8)), JSONValue.parse(lone))
+    }
+
+    func testUTF8ParserOnRealTokenizerFile() throws {
+        // The production file: 34 MB, vocab 256k, merges 580k. Both
+        // parsers must build the IDENTICAL tree (lone surrogates would
+        // diverge — tokenizer.json contains none; this test is the gate
+        // that keeps that assumption true).
+        let path = ProcessInfo.processInfo.environment["LAYA_TOKENIZER_JSON"]
+            ?? "/Users/andrei/Developer/ai/laya/models/source/tokenizer/tokenizer.json"
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw XCTSkip("tokenizer.json not present")
+        }
+        let data = try Data(contentsOf: URL(fileURLWithPath: path),
+                            options: [.mappedIfSafe])
+        let a0 = ContinuousClock.now
+        let utf8 = data.withUnsafeBytes { JSONValue.parse([UInt8]($0.bindMemory(to: UInt8.self))) }
+        let utf8s = a0.duration(to: .now)
+        let b0 = ContinuousClock.now
+        let s = String(decoding: data, as: UTF8.self)   // the old copy chain
+        let old = JSONValue.parse(s)
+        let oldS = b0.duration(to: .now)
+        XCTAssertNotNil(utf8)
+        XCTAssertNotNil(old)
+        // Full structural equality — hand-written == walks the whole tree.
+        XCTAssertEqual(utf8, old, "UTF-8 scanner diverged from UTF-16 oracle on tokenizer.json")
+        print(String(format: "J1 timing: utf8-scan %.3fs vs utf16-chain %.3fs",
+                     Double(utf8s.components.seconds) + Double(utf8s.components.attoseconds) / 1e18,
+                     Double(oldS.components.seconds) + Double(oldS.components.attoseconds) / 1e18))
+    }
 }

@@ -1,0 +1,40 @@
+#!/bin/sh
+# laya — dual-named decision CLI launcher (Swift build).
+#
+# D6 dual naming, same contract as the Python bin/jev: `jev <cmd>` is
+# literally `laya <cmd>` (identical stdin/stdout JSON, identical exit
+# codes). Resolution order:
+#   1. LAYA_SWIFT       explicit binary path
+#   2. <script dir>/laya-swift   (install layout: copy both binaries)
+#   3. release build    .build/release/laya (repo dev layout)
+#   4. debug build      .build/debug/laya
+#   5. Python fallback  server/laya_cli.py (exact old behaviour)
+# Engine paths default to the deployed laya release when unset — the
+# Python CLI hard-required LAYA_ASSETS (KeyError -> degraded); the Swift
+# binary carries the same defaults as its local backend, and the rows
+# still answer through the daemon RemoteEngine when the asset is absent.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [ -n "$LAYA_SWIFT" ]; then
+  exec "$LAYA_SWIFT" "$@"
+fi
+if [ -x "$(dirname "$0")/laya-swift" ]; then
+  exec "$(dirname "$0")/laya-swift" "$@"
+fi
+if [ -x "$ROOT/.build/release/laya" ]; then
+  exec "$ROOT/.build/release/laya" "$@"
+fi
+if [ -x "$ROOT/.build/debug/laya" ]; then
+  exec "$ROOT/.build/debug/laya" "$@"
+fi
+if command -v laya-swift >/dev/null 2>&1; then
+  exec laya-swift "$@"
+fi
+# Python fallback lives in the Python repo (sibling checkout unless
+# LAYA_PY_ROOT says otherwise).
+PY_ROOT="${LAYA_PY_ROOT:-$(cd "$ROOT/../laya-plugin" 2>/dev/null && pwd)}"
+if [ -n "$PY_ROOT" ] && [ -f "$PY_ROOT/server/laya_cli.py" ]; then
+  exec "${LAYA_PYTHON:-python3}" "$PY_ROOT/server/laya_cli.py" "$@"
+fi
+echo "laya: no swift binary and no python fallback found" >&2
+exit 3

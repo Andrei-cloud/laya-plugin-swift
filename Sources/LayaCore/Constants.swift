@@ -3,7 +3,7 @@ import Foundation
 /// Deployed thresholds — the ONE place any rail/threshold is written (DRY;
 /// "thresholds must not drift"). Swift port of server/laya_constants.py;
 /// every number cites the same spec-v2 section as the Python original.
-enum K {
+public enum K {
     // ---- routing rails (spec §3 "Routing policy") --------------------------
     static let minConfidence = 0.6
     static let hardNeedsProb = 0.6
@@ -77,6 +77,10 @@ enum K {
 
     // ---- privacy before send (spec §4) ---------------------------------------
     static let askChars = 2500
+    /// §2 supervise row facts (SUPERVISE_FACT_KEYS — the CLI pre-filters
+    /// stdin to these keys, in this insertion order, before the primitive).
+    public static let superviseFactKeys = ["no_output_s", "nudge_streak",
+                                    "question_pending", "last_output", "notes"]
     static let askCharsHeadroom = 50
 
     /// Redact patterns (spec §4). Python `re` semantics preserved via NSC

@@ -168,11 +168,17 @@ public final class LayaTokenizer: @unchecked Sendable {
     }
 
     public static func load(fromFile path: String) throws -> LayaTokenizer {
+        // J1: mmap + UTF-8-native scan. The old path was
+        // Data(contentsOf:) -> String(data:) -> Array(text.utf16):
+        // three full copies of the 34 MB file (~250 MB peak RSS on a
+        // cold one-shot load). The UTF-16 parser stays as the wire
+        // oracle; the two must produce identical trees (gated by
+        // JSONValueBoundedWriterTests.testUTF8ParserMatchesUTF16Oracle).
         let data: Data
-        do { data = try Data(contentsOf: URL(fileURLWithPath: path)) }
+        do { data = try Data(contentsOf: URL(fileURLWithPath: path), options: [.mappedIfSafe]) }
         catch { throw LoadError.unreadable(path) }
-        guard let parsed = JSONValue.parse(data),
-              case .object = parsed
+        let parsed = data.withUnsafeBytes { JSONValue.parse([UInt8]($0.bindMemory(to: UInt8.self))) }
+        guard let parsed, case .object = parsed
         else { throw LoadError.malformed("root is not an object") }
         let root = parsed
         func pair(_ v: JSONValue?) -> [(key: String, value: JSONValue)]? {

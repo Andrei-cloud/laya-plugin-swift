@@ -307,6 +307,9 @@ public actor Engine {
     public struct WireAnswer: Sendable {
         public var name: String
         public var answer: JSONValue
+        public init(name: String, answer: JSONValue) {
+            self.name = name; self.answer = answer
+        }
     }
 
     /// Run ONE wire question through the chain rule and map the engine

@@ -24,7 +24,8 @@ struct LayaCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "laya",
         version: "1.0",
-        subcommands: [Ask.self, Health.self, Models.self])
+        subcommands: [Ask.self, Health.self, Models.self,
+                      TriageRow.self, MailRow.self, SuperviseRow.self])
 }
 
 // MARK: ask
@@ -69,16 +70,51 @@ extension LayaCLI {
 
         /// Python engine.py default: LAYA_SOURCE or <assets>/configs; the dev
         /// layout keeps the tokenizer at <models>/source — try configs first.
+        ///
+        /// LAYA_ASSETS convention (engine.py:7): a DIRECTORY containing
+        /// laya-combined-f16.aimodel/ + combined_provenance.json. Accept
+        /// BOTH spellings — a directory expands to the bundle inside it
+        /// (Engine then reads provenance at <dir>/combined_provenance.json
+        /// via its ../ resolution); a direct bundle path works as before.
+        /// Getting this wrong silently degrades the local engine to the
+        /// RemoteEngine rail — every row then answers daemon-sourced and
+        /// looks healthy while the in-process inference never loaded
+        /// (found by the rows differential, 2026-09-27).
         static func resolvePaths() -> (assets: String, source: String) {
-            let assets = Naming.envAlias("ASSETS")
+            var assets = Naming.envAlias("ASSETS")
                 ?? "/Users/andrei/Developer/ai/laya/models/coreai/laya-combined-f16.aimodel"
-            if let env = Naming.envAlias("SOURCE") { return (assets, env) }
-            let configs = (assets as NSString).appendingPathComponent("configs")
-            if FileManager.default.fileExists(atPath: (configs as NSString)
-                .appendingPathComponent("tokenizer/tokenizer.json")) { return (assets, configs) }
-            // dev layout: <models>/coreai/<asset>, tokenizer at <models>/source
-            let models = (assets as NSString).appendingPathComponent("../..")
-            return (assets, (models as NSString).appendingPathComponent("source"))
+            // NOTE: a .aimodel bundle is ITSELF a directory, so "path is a
+            // directory" does not mean "dir containing the bundle". Distinguish
+            // by the bundle leaf name INSIDE the path (Python convention =
+            // release dir; Swift convenience = direct bundle path).
+            var isDir: ObjCBool = false
+            let existsAsDir = FileManager.default.fileExists(atPath: assets, isDirectory: &isDir)
+                && isDir.boolValue
+            let bundle = (assets as NSString)
+                .appendingPathComponent("laya-combined-f16.aimodel")
+            let dirSpelling = existsAsDir
+                && FileManager.default.fileExists(atPath: bundle)
+            var source: String
+            if let env = Naming.envAlias("SOURCE") {
+                source = env
+            } else if dirSpelling {
+                // engine.py:138 exactly: <assets>/configs
+                source = (assets as NSString).appendingPathComponent("configs")
+            } else {
+                // Direct-bundle spelling (Swift convenience): Python's
+                // <assets>/configs never exists there; probe it, then the
+                // dev layout <models>/source.
+                let configs = (assets as NSString).appendingPathComponent("configs")
+                if FileManager.default.fileExists(atPath: (configs as NSString)
+                    .appendingPathComponent("tokenizer/tokenizer.json")) {
+                    source = configs
+                } else {
+                    let models = (assets as NSString).appendingPathComponent("../..")
+                    source = (models as NSString).appendingPathComponent("source")
+                }
+            }
+            if dirSpelling { assets = bundle }
+            return (assets, source)
         }
 
         // MARK: local (in-process Core AI)

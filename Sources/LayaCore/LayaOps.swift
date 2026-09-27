@@ -36,6 +36,7 @@ public enum LayaOps {
     public struct OpsError: Error, CustomStringConvertible {
         public let message: String
         public var description: String { message }
+        public init(message: String) { self.message = message }
     }
 
     private static func checkQuestion(_ qtype: String, _ qname: String, _ q: JSONValue) throws {
