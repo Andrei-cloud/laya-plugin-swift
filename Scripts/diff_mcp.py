@@ -45,7 +45,16 @@ def sse_data(text):
     return None
 
 def envelope(text):
-    return sse_data(text) or (json.loads(text) if text.strip().startswith("{") else None)
+    e = sse_data(text) or (json.loads(text) if text.strip().startswith("{") else None)
+    # Each server reports ITS OWN version in serverInfo (the capture
+    # stub is pinned at 0.2.0; a 0.3.0 daemon says 0.3.0). The gate is
+    # about protocol behavior, so normalize that one field.
+    if isinstance(e, dict):
+        si = e.get("result", {}).get("serverInfo")
+        if isinstance(si, dict):
+            si = dict(si, version="<self>")
+            e = dict(e, result=dict(e["result"], serverInfo=si))
+    return e
 
 CASES = [
     # (name, body, accept, compare: "full" | "code" | "struct")
